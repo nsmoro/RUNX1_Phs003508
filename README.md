@@ -1,6 +1,6 @@
 # scRNA-seq Analysis Pipeline RUNX1 Human Data (Phs003508.v1.p1) - Platform: 10x Genomics
 
-This repository contains a complete pipeline for analyzing single-cell RNA-seq data.
+This repository contains a complete pipeline for analyzing single-cell RNA-seq data and single-cell transposable elements.
 
 Data downloaded from Phs003508.v1.p1 - DOI: 10.1126/scitranslmed.adn9832
 
