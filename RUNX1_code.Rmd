@@ -1,0 +1,4089 @@
+---
+title: "RUNX1_Phs003508"
+subtitle: "Dataset - 10xGenomics"
+author: "Natalia Silva Morosini"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+---
+
+**This document analyzes RUNX1 (HD & FPD) in the HSC population, using data downloaded from Phs003508.v1.p1**
+
+---
+
+# **PART 1 - Required Packages**
+
+First, check the Seurat version to ensure that you begin the analysis using a version < 5.0, as this is a requirement 
+of one of the steps. Please consult the README.txt file for more details.
+
+## Setup
+
+```{r setup, warning=FALSE, message=FALSE, eval=FALSE}
+library(here)
+library(patchwork)
+library(rtracklayer)
+library(R.utils)
+
+library(SingleCellExperiment)
+library(GenomicRanges)
+library(Seurat.utils)
+library(Seurat)
+library(SeuratData)
+
+library(dplyr)
+library(reshape2)
+library(ggrepel)
+library(dendextend)
+library(ggplot2)
+library(tidyverse)
+library(gridExtra)
+library(gridtext)
+library(grid)
+
+library(pheatmap)
+library(ComplexHeatmap)
+library(cowplot)
+library(RColorBrewer)
+library(ggcorrplot)
+library(corrplot)
+library(paletteer)
+library(viridis)
+library(scales)
+library(cetcolor)
+library(plotrix)
+library(DOSE)
+library(Azimuth)
+
+library(limma)
+library(edgeR)
+library(DESeq2)
+library(DEsingle)
+library(SeuratDisk)
+
+library(org.Mm.eg.db)
+library(monocle3)
+library(clusterProfiler)
+library(AnnotationDbi)
+library(circlize)
+library(scCustomize)
+library(HGNChelper)
+library(enrichplot)
+library(DOSE)
+library(clusterProfiler)
+
+library(biomaRt)
+library(enrichplot)
+library(ensembldb)
+
+if (!dir.exists("rda")) 
+  dir.create("rda")
+
+if (!dir.exists("plots")) 
+  dir.create("plots")
+
+if (!dir.exists("csv")) 
+  dir.create("csv")
+
+if (!dir.exists("gencode")) 
+  dir.create("gencode")
+
+if (!dir.exists("counts")) 
+  dir.create("counts")
+
+if (!dir.exists("hscscore")) 
+  dir.create("hscscore")
+```
+
+# **PART 2 - Loading Dataset**
+
+## HD (Control)
+
+```{r hdcontrol, warning=FALSE,eval=FALSE}
+wt_dir <- here("counts", "HD")
+
+main_dirs <- list.dirs(wt_dir, full.names = TRUE, recursive = FALSE)
+# Loop through each main directory
+for (main_dir in main_dirs) {
+  # Get the subdirectories inside each main directory
+  sub_dirs <- list.dirs(main_dir, full.names = TRUE, recursive = FALSE)
+  
+  # Loop through each subdirectory
+  for (sub_dir in sub_dirs) {
+    h5_file <- file.path(sub_dir, "outs", "filtered_feature_bc_matrix.h5")
+    
+    if (file.exists(h5_file)) {
+      data <- Read10X_h5(h5_file, use.names = TRUE)
+      project_name <- gsub("_counts", "", basename(sub_dir))
+      project <- basename(main_dir)  
+      seurat_obj <- CreateSeuratObject(data, project = project)
+      seurat_obj <- AddMetaData(seurat_obj, project_name, col.name = "Sample")
+      seurat_obj <- AddMetaData(seurat_obj, "HD", col.name = "Condition")
+      assign(project_name, seurat_obj, envir = .GlobalEnv) 
+    }
+  }
+}
+
+# Merge
+cell_ids <- paste0("HD", c(1:6))
+obj <- ls(pattern = "^SRR")
+obj_list <- mget(obj)
+hd <- merge(x = obj_list[[1]], y = obj_list[2:length(obj_list)], add.cell.ids = cell_ids)
+ncol(hd)
+hd <- JoinLayers (hd)
+
+rm(list=obj)
+
+# Adding Metadata
+
+## Gender
+hd@meta.data$Gender <- "Male"
+hd@meta.data[substr(hd@meta.data$orig.ident, 6,7) %in% "05","Gender"] <- "Female"
+hd <- AddMetaData(hd, hd@meta.data$Gender, col.name = "Gender")
+
+## Mitochondria
+a <- rownames(hd)[grep("^MT-",rownames(hd))]
+b <- GetAssayData(object = hd, layer = "counts")
+mit <- colSums(b[a,])/Matrix::colSums(b)*100
+hd <- AddMetaData(hd, mit, col.name = "Mitoc")
+
+## Ribosomal
+a <- rownames(hd)[grep("^RPS|^RPL",rownames(hd))]
+b <- GetAssayData(object = hd, layer = "counts")
+c <- colSums(b[a,])/Matrix::colSums(b)*100
+hd <- AddMetaData(hd, c, col.name = "percent.ribo")
+
+## Complexity
+a <- log10(hd@meta.data$nFeature_RNA)/log10(hd@meta.data$nCount_RNA)
+hd <- AddMetaData(hd, a, col.name = "Complexity")
+```
+
+## FPD
+
+```{r fpd, warning=FALSE,eval=FALSE}
+fpd_dir <- here("counts", "FPD")
+
+main_dirs <- list.dirs(fpd_dir, full.names = TRUE, recursive = FALSE)
+# Loop through each main directory
+for (main_dir in main_dirs) {
+  # Get the subdirectories inside each main directory
+  sub_dirs <- list.dirs(main_dir, full.names = TRUE, recursive = FALSE)
+  
+  # Loop through each subdirectory
+  for (sub_dir in sub_dirs) {
+    h5_file <- file.path(sub_dir, "outs", "filtered_feature_bc_matrix.h5")
+    
+    if (file.exists(h5_file)) {
+      data <- Read10X_h5(h5_file, use.names = TRUE)
+      project_name <- gsub("_counts", "", basename(sub_dir))
+      project <- basename(main_dir)  
+      seurat_obj <- CreateSeuratObject(data, project = project)
+      seurat_obj <- AddMetaData(seurat_obj, project_name, col.name = "Sample")
+      seurat_obj <- AddMetaData(seurat_obj, "FPD", col.name = "Condition")
+      assign(project_name, seurat_obj, envir = .GlobalEnv) 
+    }
+  }
+}
+
+# Merge
+cell_ids <- paste0("FPD", c(1:24))
+obj <- ls(pattern = "^SRR")
+obj_list <- mget(obj)
+fpd <- merge(x = obj_list[[1]], y = obj_list[2:length(obj_list)], add.cell.ids = cell_ids)
+ncol(fpd) 
+fpd <- JoinLayers (fpd)
+
+rm(list=obj)
+
+# Adding Metadata
+
+## Gender
+fpd@meta.data$Gender <- "Male"
+fpd@meta.data[fpd@meta.data$orig.ident %in% c("FPD10","FPD12","FPD3","FPD4","FPD6","FPD8"),"Gender"] <- "Female"
+fpd <- AddMetaData(fpd, fpd@meta.data$Gender, col.name = "Gender")
+
+## Mitochondria
+a <- rownames(fpd)[grep("^MT-",rownames(fpd))]
+b <- GetAssayData(object = fpd, layer = "counts")
+mit <- colSums(b[a,])/Matrix::colSums(b)*100
+fpd <- AddMetaData(fpd, mit, col.name = "Mitoc")
+
+## Ribosomal
+a <- rownames(fpd)[grep("^RPS|^RPL",rownames(fpd))]
+b <- GetAssayData(object = fpd, layer = "counts")
+c <- colSums(b[a,])/Matrix::colSums(b)*100
+fpd <- AddMetaData(fpd, c, col.name = "percent.ribo")
+
+## Complexity
+a <- log10(fpd@meta.data$nFeature_RNA)/log10(fpd@meta.data$nCount_RNA)
+fpd <- AddMetaData(fpd, a, col.name = "Complexity")
+```
+
+# **PART 3 - Quality Control**
+
+## Mitochondria
+
+```{r mitoqc, warning=FALSE,eval=FALSE}
+# HD
+hd_mito <- as.data.frame(hd@meta.data) %>%
+  ggplot(aes(Condition, Mitoc, fill = Gender)) +
+  geom_boxplot(outlier.shape = 1, width = 0.8) +
+  scale_fill_manual(values=c("deeppink","cyan3")) +
+  geom_hline(yintercept=c(2, 5.8), linetype='dashed', color=c('blue', 'red'), size=0.2)+
+  theme(legend.position = "right",
+        axis.title.x = element_blank())
+
+# FPD
+fpd_mito <- as.data.frame(fpd@meta.data) %>%
+  ggplot(aes(Condition, Mitoc, fill = Gender)) +
+  geom_boxplot(outlier.shape = 1, width = 0.8) +
+  scale_fill_manual(values=c("deeppink","cyan3")) +
+  geom_hline(yintercept=c(1.8, 6.5), linetype='dashed', color=c('blue', 'red'), size=0.2)+
+  theme(legend.position = "right",
+        axis.title.x = element_blank())
+
+p <- hd_mito + fpd_mito
+
+p
+```
+
+## Complexity
+
+```{r complexqc, warning=FALSE,eval=FALSE}
+# HD
+comp_hd <- as.data.frame(hd@meta.data) %>% 
+  ggplot(aes(color=Gender, x=Complexity, fill=Condition)) + 
+  geom_density(alpha = 0.2) + 
+  scale_fill_manual(values=c("blue")) +
+  theme_classic() +
+  scale_x_log10() +
+  geom_vline(xintercept = 0.8)
+
+# FPD
+comp_fpd <- as.data.frame(fpd@meta.data) %>% 
+  ggplot(aes(color=Gender, x=Complexity, fill=Condition)) + 
+  geom_density(alpha = 0.2) + 
+  scale_fill_manual(values=c("red")) +
+  theme_classic() +
+  scale_x_log10() +
+  geom_vline(xintercept = 0.8)
+
+p <- comp_hd + comp_fpd
+
+p
+```
+
+## Genes Detected per Cell (nFeature_RNA)
+
+```{r nfeatqc, warning=FALSE,eval=FALSE}
+# HD
+nfeat_hd <- as.data.frame(hd@meta.data) %>%
+  ggplot(aes(Condition, nFeature_RNA, fill = Gender)) +
+  geom_boxplot(outlier.shape = 1, width = 0.8) +
+  scale_fill_manual(values=c("deeppink","cyan3")) +
+  geom_hline(yintercept=c(200,6250), linetype='dashed',
+             color=c('blue'), size=0.2)+
+  theme(legend.position = "right",
+        axis.title.x = element_blank())
+
+# FPD
+nfeat_fpd <- as.data.frame(fpd@meta.data) %>%
+  ggplot(aes(Condition, nFeature_RNA, fill = Gender)) +
+  geom_boxplot(outlier.shape = 1, width = 0.8) +
+  scale_fill_manual(values=c("deeppink","cyan3")) +
+  geom_hline(yintercept=c(200,5500), linetype='dashed',
+             color=c('blue'), size=0.2)+
+  theme(legend.position = "right",
+        axis.title.x = element_blank())
+
+
+p <- nfeat_hd + nfeat_fpd
+
+p
+```
+
+## Total Number of RNA molecules (UMIs - nCount_RNA)
+
+```{r ncountqc, warning=FALSE,eval=FALSE}
+# HD
+ncount_hd <- as.data.frame(hd@meta.data) %>%
+  ggplot(aes(Condition, nCount_RNA, fill = Gender)) +
+  geom_boxplot(outlier.shape = 1, width = 0.8) +
+  scale_fill_manual(values=c("deeppink","cyan3")) +
+  geom_hline(yintercept=c(200,21000), linetype='dashed',
+             color=c('blue'), size=0.2)+
+  theme(legend.position = "right",
+        axis.title.x = element_blank())
+
+# FPD
+ncount_fpd <- as.data.frame(fpd@meta.data) %>%
+  ggplot(aes(Condition, nCount_RNA, fill = Gender)) +
+  geom_boxplot(outlier.shape = 1, width = 0.8) +
+  scale_fill_manual(values=c("deeppink","cyan3")) +
+  geom_hline(yintercept=c(200,18000), linetype='dashed',
+             color=c('blue'), size=0.2)+
+  theme(legend.position = "right",
+        axis.title.x = element_blank())
+
+p <- ncount_hd + ncount_fpd
+
+p
+```
+
+# **PART 4 - Filtering Cells**
+
+```{r filtering, warning=FALSE,eval=FALSE}
+# HD
+hd$log10GenesPerUMI <- log10(hd$nFeature_RNA) / log10(hd$nCount_RNA)
+hd$mitoRatio <- PercentageFeatureSet(object = hd, pattern = "^MT-")
+hd$mitoRatio <- hd@meta.data$mitoRatio / 100
+hd$riboRatio <- PercentageFeatureSet(object = hd, pattern = "^RPS|^RPL")
+hd$riboRatio <- hd@meta.data$riboRatio / 100
+a <- hd@meta.data
+a$cells <- rownames(a)
+a <- a %>%
+  dplyr::rename(seq_folder = orig.ident,
+                nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+hd@meta.data <- a
+
+meta <- hd@meta.data
+
+# Visualize the number of cell counts per sample
+meta %>% 
+  ggplot(aes(x=Sample, fill=Sample)) + 
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  geom_hline(yintercept=c(13000), linetype='dashed', 
+             color=c("blue"), size=0.2) +
+  ggtitle("NCells") 
+
+# Visualize the number UMIs/transcripts per cell
+meta %>% 
+  ggplot(aes(color=Sample, x=nUMI, fill= Sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  ylab("Cell density") +
+  geom_vline(xintercept = 500)
+
+# Visualize the distribution of genes detected per cell via histogram
+meta %>% 
+  ggplot(aes(color=Sample, x=nGene, fill= Sample)) + 
+  geom_density(alpha = 0.2) + 
+  theme_classic() +
+  scale_x_log10() + 
+  geom_vline(xintercept = 350)
+
+#Visualize the distribution of genes detected per cell via boxplot
+meta %>% 
+  ggplot(aes(x=Sample, y=log10(nGene), fill=Sample)) + 
+  geom_boxplot() + 
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells vs NGenes")
+
+# Visualize the correlation between genes detected and number of UMIs 
+meta %>% 
+  ggplot(aes(x=nUMI, y=nGene, color=mitoRatio)) + 
+  geom_point() + 
+  scale_colour_gradient(low = "gray90", high = "black") +
+  stat_smooth(method=lm) +
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 800) +
+  geom_hline(yintercept = 500) +
+  facet_wrap(~Sample)
+
+# Visualize the distribution of mitochondrial gene expression detected per cell
+meta %>% 
+  ggplot(aes(color=Sample, x=mitoRatio, fill=Sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 0.08)
+
+meta %>%
+  ggplot(aes(mitoRatio)) + 
+  geom_histogram(binwidth = 0.5, fill="yellow", colour="black") +
+  ggtitle("Distribution of Percentage Mitochondria") +
+  geom_vline(xintercept = 10)
+
+# Visualize the distribution of ribosomal gene expression detected per cell
+meta %>% 
+  ggplot(aes(color=Sample, x=riboRatio, fill=Sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 0.06)
+
+# Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI
+meta %>%
+  ggplot(aes(x=log10GenesPerUMI, color = Sample, fill=Sample)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  geom_vline(xintercept = 0.8)
+
+# Filtering HD cells
+hd_filt <- subset(x = hd, 
+                   subset= (nUMI >= 200 & nUMI <= 21000) & 
+                     (nGene >= 200 & nGene <= 6250) & 
+                     (riboRatio >= 0.06) &
+                     (log10GenesPerUMI > 0.80) & 
+                     (Mitoc < 5.8))
+
+ncol(hd) 
+ncol(hd_filt) 
+
+# FPD
+fpd$log10GenesPerUMI <- log10(fpd$nFeature_RNA) / log10(fpd$nCount_RNA)
+fpd$mitoRatio <- PercentageFeatureSet(object = fpd, pattern = "^MT-")
+fpd$mitoRatio <- fpd@meta.data$mitoRatio / 100
+fpd$riboRatio <- PercentageFeatureSet(object = fpd, pattern = "^RPS|^RPL")
+fpd$riboRatio <- fpd@meta.data$riboRatio / 100
+a <- fpd@meta.data
+a$cells <- rownames(a)
+a <- a %>%
+  dplyr::rename(seq_folder = orig.ident,
+                nUMI = nCount_RNA,
+                nGene = nFeature_RNA)
+fpd@meta.data <- a
+
+meta <- fpd@meta.data
+
+# Visualize the number of cell counts per sample
+meta %>% 
+  ggplot(aes(x=Sample, fill=Sample)) + 
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  geom_hline(yintercept=c(19000), linetype='dashed', 
+             color=c("blue"), size=0.2) +
+  ggtitle("NCells") 
+
+# Visualize the number UMIs/transcripts per cell
+meta %>% 
+  ggplot(aes(color=Sample, x=nUMI, fill= Sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  ylab("Cell density") +
+  geom_vline(xintercept = 500)
+
+# Visualize the distribution of genes detected per cell via histogram
+meta %>% 
+  ggplot(aes(color=Sample, x=nGene, fill= Sample)) + 
+  geom_density(alpha = 0.2) + 
+  theme_classic() +
+  scale_x_log10() + 
+  geom_vline(xintercept = 300)
+
+#Visualize the distribution of genes detected per cell via boxplot
+meta %>% 
+  ggplot(aes(x=Sample, y=log10(nGene), fill=Sample)) + 
+  geom_boxplot() + 
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells vs NGenes")
+
+# Visualize the correlation between genes detected and number of UMIs 
+meta %>% 
+  ggplot(aes(x=nUMI, y=nGene, color=mitoRatio)) + 
+  geom_point() + 
+  scale_colour_gradient(low = "gray90", high = "black") +
+  stat_smooth(method=lm) +
+  scale_x_log10() + 
+  scale_y_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 800) +
+  geom_hline(yintercept = 500) +
+  facet_wrap(~Sample)
+
+# Visualize the distribution of mitochondrial gene expression detected per cell
+meta %>% 
+  ggplot(aes(color=Sample, x=mitoRatio, fill=Sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 0.15)
+
+meta %>%
+  ggplot(aes(mitoRatio)) + 
+  geom_histogram(binwidth = 0.5, fill="yellow", colour="black") +
+  ggtitle("Distribution of Percentage Mitochondria") +
+  geom_vline(xintercept = 10)
+
+# Visualize the distribution of ribosomal gene expression detected per cell
+meta %>% 
+  ggplot(aes(color=Sample, x=riboRatio, fill=Sample)) + 
+  geom_density(alpha = 0.2) + 
+  scale_x_log10() + 
+  theme_classic() +
+  geom_vline(xintercept = 0.06)
+
+# Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI
+meta %>%
+  ggplot(aes(x=log10GenesPerUMI, color = Sample, fill=Sample)) +
+  geom_density(alpha = 0.2) +
+  theme_classic() +
+  geom_vline(xintercept = 0.8)
+
+# Filtering FPD cells
+fpd_filt <- subset(x = fpd, 
+                  subset= (nUMI >= 200 & nUMI <= 18000) & 
+                    (nGene >= 200 & nGene <= 5500) & 
+                    (riboRatio >= 0.06) &
+                    (log10GenesPerUMI > 0.80) & 
+                    (Mitoc < 6.5))
+
+ncol(fpd) 
+ncol(fpd_filt) 
+```
+
+# **PART 5 -  Data Scale & Normalization**
+
+```{r scale&norm, warning=FALSE,eval=FALSE}
+hd <- hd_filt
+fpd <- fpd_filt
+rm(hd_filt, fpd_filt)
+gc()
+
+# HD
+hd <- RunAzimuth(hd , reference = "bonemarrowref")
+obj <- NormalizeData(object = hd)
+obj <- FindVariableFeatures(object = obj)
+genes <- rownames(obj)
+obj <- ScaleData(object = obj, features=genes)
+obj <- RunPCA(object = obj, features = VariableFeatures(object = obj))
+ElbowPlot(obj, ndims = 50, reduction = "pca")
+obj <- FindNeighbors(object = obj, dims = 1:20)
+obj <- FindClusters(object = obj, resolution=0.8, cluster.name = "unintegrated_clusters")
+obj <- RunUMAP(object = obj, dims= 1:20, reduction = "pca", reduction.name = "umap.unintegrated")
+
+DimPlot(obj, reduction = "umap.unintegrated", label = T, label.box =TRUE) + NoLegend()
+DimPlot(obj, reduction = "umap.unintegrated", group.by = "predicted.celltype.l2")
+
+## Harmony
+Idents(obj) <- "unintegrated_clusters"
+
+obj[["RNA"]] <- split(obj[["RNA"]], f = obj$Sample)
+
+obj <- IntegrateLayers(
+  object = obj, method = HarmonyIntegration,
+  orig.reduction = "pca", new.reduction = "harmony"
+)
+
+obj <- FindNeighbors(obj, reduction = "harmony", dims = 1:20)
+obj <- FindClusters(obj, resolution = 0.8, cluster.name = "harmony_clusters")
+obj <- RunUMAP(obj, reduction = "harmony", dims = 1:20, reduction.name = "umap.harmony")
+
+DimPlot(obj, reduction = "umap.harmony", label = T, label.box =TRUE) + NoLegend()
+DimPlot(obj, reduction = "umap.harmony", group.by = "predicted.celltype.l2")
+
+p <- DimPlot(obj, reduction = "umap.harmony", label = T, label.box =TRUE) + NoLegend()
+
+ggsave("plots/UMAP_Harmony_HD.png", p, height=5.5, width=6.8, dpi=300)
+
+hd_obj <- obj
+rm(obj)
+
+# FPD
+fpd <- RunAzimuth(fpd , reference = "bonemarrowref")
+obj <- NormalizeData(object = fpd)
+obj <- FindVariableFeatures(object = obj)
+genes <- rownames(obj)
+obj <- ScaleData(object = obj, features=genes)
+obj <- RunPCA(object = obj, features = VariableFeatures(object = obj))
+ElbowPlot(obj, ndims = 50, reduction = "pca")
+obj <- FindNeighbors(object = obj, dims = 1:20)
+obj <- FindClusters(object = obj, resolution=1, cluster.name = "unintegrated_clusters")
+obj <- RunUMAP(object = obj, dims= 1:20, reduction = "pca", reduction.name = "umap.unintegrated")
+
+DimPlot(obj, reduction = "umap.unintegrated", label = T, label.box =TRUE) + NoLegend()
+DimPlot(obj, reduction = "umap.unintegrated", group.by = "predicted.celltype.l2")
+
+## Harmony
+Idents(obj) <- "unintegrated_clusters"
+
+obj[["RNA"]] <- split(obj[["RNA"]], f = obj$Sample)
+
+obj <- IntegrateLayers(
+  object = obj, method = HarmonyIntegration,
+  orig.reduction = "pca", new.reduction = "harmony"
+)
+
+obj <- FindNeighbors(obj, reduction = "harmony", dims = 1:20)
+obj <- FindClusters(obj, resolution = 1, cluster.name = "harmony_clusters")
+obj <- RunUMAP(obj, reduction = "harmony", dims = 1:20, reduction.name = "umap.harmony")
+
+DimPlot(obj, reduction = "umap.harmony", group.by = "predicted.celltype.l2")
+
+p <- DimPlot(obj, reduction = "umap.harmony", label = T, label.box =TRUE) + NoLegend()
+
+ggsave("plots/UMAP_Harmony_FPD.png", p, height=5.5, width=6.8, dpi=300)
+
+fpd_obj <- obj
+rm(obj)
+```
+
+# **PART 6 - Merging Seurats**
+
+```{r merging, warning=FALSE,eval=FALSE}
+obj <- merge(hd, c(fpd))
+rm(hd,fpd)
+
+obj <- JoinLayers(obj, assay = "RNA")
+obj <- RunAzimuth(obj , reference = "bonemarrowref")
+
+obj <- NormalizeData(object = obj)
+obj <- FindVariableFeatures(object = obj)
+genes <- rownames(obj)
+obj <- ScaleData(object = obj, features=genes)
+obj <- RunPCA(object = obj, features = VariableFeatures(object = obj))
+ElbowPlot(obj, ndims = 50, reduction = "pca")
+obj <- FindNeighbors(object = obj, dims = 1:16)
+obj <- FindClusters(object = obj, resolution=1, cluster.name = "unintegrated_clusters")
+obj <- RunUMAP(object = obj, dims= 1:16, reduction = "pca", reduction.name = "umap.unintegrated")
+
+DimPlot(obj, reduction = "umap.unintegrated", label = T, label.box =TRUE) + NoLegend()
+DimPlot(obj, reduction = "umap.unintegrated", label = F, group.by = "Condition")
+
+## Harmony
+Idents(obj) <- "unintegrated_clusters"
+
+obj[["RNA"]] <- split(obj[["RNA"]], f = obj$Sample)
+
+obj <- IntegrateLayers(
+  object = obj, method = HarmonyIntegration,
+  orig.reduction = "pca", new.reduction = "harmony"
+)
+
+obj <- FindNeighbors(obj, reduction = "harmony", dims = 1:16)
+obj <- FindClusters(obj, resolution = 1, cluster.name = "harmony_clusters")
+obj <- RunUMAP(obj, reduction = "harmony", dims = 1:16, reduction.name = "umap.harmony")
+
+DimPlot(obj, reduction = "umap.harmony", group.by = "Condition")
+
+p <- DimPlot(obj, reduction = "umap.harmony", label = T, label.box =TRUE) + NoLegend()
+
+ggsave("plots/UMAP_Harmony_merged.png", p, height=5.5, width=6.8, dpi=300)
+
+colnames(obj@meta.data)[colnames(obj@meta.data) == "harmony_clusters"] <- "Clusters"
+obj@meta.data$Clusters <- paste0("Cluster_",obj@meta.data$Clusters)
+
+save(obj, file="rda/seurats_harmony.rda")
+```
+
+# **PART 7 - Distribution Plots**
+
+```{r distribution, warning=FALSE,eval=FALSE}
+# Cluster Distribution (%)
+Idents(obj) <- obj@meta.data$Clusters
+
+cluster_stats.g <- Cluster_Stats_All_Samples(seurat_object = obj, 
+                                             group.by = "Condition")
+cluster_stats.g <- cluster_stats.g[-41,]
+
+data <- cluster_stats.g[,c(1:3)]
+
+data$Freq <- round(data$Freq, 2)
+
+data$Cluster <- factor(data$Cluster, levels = paste0("Cluster_", 0:39))
+
+p <- ggplot(data, aes(x = Cluster, y = Freq, fill = Cluster)) +
+  geom_bar(width = 0.85, stat = "identity", position = "stack",
+           color = "black") +
+  scale_y_continuous(limits = c(0, 12), breaks = seq(0, 12, by = 2)) +  
+  labs(title = "",
+       x = "",
+       y = "Percentage (%)") +
+  theme_classic() +
+  geom_label(aes(y = Freq, label = paste0(Freq, "%")), 
+             position = position_stack(vjust = 0.8), 
+             colour = "black",
+             fontface = "bold",
+             size = 3.0,
+             fill = "white", 
+             label.size = 0.25) +
+  theme(
+    axis.title.y = element_text(size = 12,
+                                color = "black",
+                                face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 10), 
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "gray95"),  
+    panel.grid.minor = element_line(color = "gray95"),
+    axis.text.x = element_text(size = 8.5, angle=45, hjust = 1),
+    legend.position = "none")
+
+p
+
+# Cells Distribution
+cluster_stats.g <- Cluster_Stats_All_Samples(seurat_object = obj, 
+                                             group.by = "Condition")
+
+cluster_stats.g <- cluster_stats.g[-41,]
+cluster_stats.g <- cluster_stats.g[,c(1,2,4:5)]
+
+df <- cluster_stats.g %>%
+  pivot_longer(cols = c(FPD, HD),
+               names_to = "variable", values_to = "value")
+
+df$No <- 0
+df[df$variable %in% "FPD", "No"] <- df[df$variable %in% "FPD", "value"] * 100 / df[df$variable %in% "FPD","Number"]
+df[df$variable %in% "HD", "No"] <- df[df$variable %in% "HD", "value"] * 100 / df[df$variable %in% "HD","Number"]
+
+df$No <- round(df$No, 2)
+
+df$variable <- factor(df$variable, levels=c("HD","FPD"))
+colnames(df)[3] <- "Condition"
+
+df$Cluster <- factor(df$Cluster, levels = paste0("Cluster_", 0:39))
+
+colors = c("gray92","blue4")
+
+p <- ggplot(df, aes(x = Cluster, y = No, fill = Condition)) +
+  geom_bar(width = 0.65, stat = "identity", position = "stack",
+           color = "black") +
+  scale_fill_manual(values = colors, name=NULL) +
+  labs(title = "",
+       x = "",
+       y = "Percentage (%)") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 12,
+                                color = "black",
+                                face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 10), 
+    strip.text = element_text(size = 10.5,face = "bold", color = "black"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "gray95"),  
+    panel.grid.minor = element_line(color = "white"),
+    axis.text.x = element_text(size = 8.5, angle=45, hjust = 1),
+    legend.position = "bottom")
+
+p
+
+rm(cluster_stats.g, data, df, colors,p)
+```
+
+# **PART 8 - Identifying HSC Score**
+
+Install HSCScore package following the tutorial:https://github.com/fionahamey/hscScore
+Download the necessary files from here: https://zenodo.org/records/3332151
+
+```{r hscscore, warning=FALSE,eval=FALSE}
+method <- "homologene"
+
+species <- orthogene::map_species(species = c("human","mus musculus"), 
+                                  output_format = "id")
+
+orth <- orthogene::report_orthologs(target_species = "human",
+                                    reference_species = "mouse",
+                                    method_all_genes = method,
+                                    method_convert_orthologs = method) 
+
+x <- as.data.frame(orth)
+x <- x[,c(4,5)]
+colnames(x) <- c("Human","Mouse")
+keep <- x$Human
+
+seurat <- subset(obj, features = keep)
+dim(seurat)
+
+x <- x[x$Human %in% rownames(seurat),]
+
+match_idx <- match(rownames(seurat), x$Human)
+
+rownames(seurat) <- ifelse(
+  !is.na(match_idx),
+  x$Mouse[match_idx],
+  rownames(seurat)  
+)
+
+seurat <- JoinLayers(seurat)
+
+mat <- as.data.frame(seurat@assays$RNA$counts)
+
+file_path <- "hscscore/model_molo_genes.txt"
+genes <- scan(file_path, what = "character", sep = "\n")
+
+a <- mat[rownames(mat) %in% genes,]
+
+missing <- setdiff(genes, rownames(a))
+
+num_new_rows <- 8
+
+new_rows <- data.frame(matrix(0, nrow=num_new_rows, ncol=ncol(a)))
+colnames(new_rows) <- colnames(a)
+
+df <- rbind(a, new_rows)
+
+rownames(df)[(nrow(df)-num_new_rows+1):nrow(df)] <- c("2810417H13Rik", "Cdkn1c", "Fam64a", "Ifitm1","Ly6a","Sgol1","Sqrdl","Sult1a1")
+
+write.table(df, file = "hscscore/all.tsv", sep = "\t", row.names = TRUE, quote = FALSE)
+
+# Assigning HSCs
+cells <- colnames(mat)
+
+score <- read.csv("hscScore/score.csv", header = TRUE, sep = ",")
+rownames(score) <- cells
+max(score$HSC_Score)
+min(score$HSC_Score)
+
+score$Type <- "Unknown"
+score[score$HSC_Score >= 0.3, "Type"] <- "HSC"
+table(score$Type)
+
+score$Level <- "Absent"
+score[(score$HSC_Score >= 0.35 & score$Type != "Unknown"), "Level"] <- "HSC_High"
+score[(score$HSC_Score < 0.35 & score$HSC_Score >= 0.25 & score$Type != "Unknown"), "Level"] <- "HSC_Medium"
+score[(score$HSC_Score < 0.25 & score$Type != "Unknown"), "Level"] <- "HSC_Low"
+table(score$Level)
+score$cells <- rownames(score)
+
+save(score, file="./hscScore/hsc_scores.rda")
+```
+
+After running HSCScore the output file "score.csv" will be generated. Load the score file into R to continue the analysis.
+The annotation of cell types - LT-HSC; ST-HSC and MPPs - was performed in accordance with the HSCScore paper.
+
+```{r score, warning=FALSE, eval=FALSE}
+meta <- obj@meta.data
+
+meta <- merge(meta, score[,c("cells","Level","Type")], by.x="cells", by.y="cells")
+rownames(meta) <- meta$cells
+check <- meta[(meta$predicted.celltype.l2 == "HSC" & meta$Type == "HSC"),]
+
+x <- meta %>%
+  group_by(Type, Level, predicted.celltype.l2, Clusters) %>%
+  summarize(Total = n(), .groups = "drop") %>%
+  arrange(desc(Total))
+
+x <- x[x$Type == "HSC" & x$predicted.celltype.l2 == "HSC",]
+
+a <- x %>%
+  group_by(Clusters) %>%
+  summarize(ClusterTotal = sum(Total), .groups = "drop") %>%
+  arrange(desc(ClusterTotal))
+
+meta$Score <- meta$predicted.celltype.l2
+meta$prediction <- meta$Score
+meta[meta$Clusters %in% c("Cluster_7"),"prediction"] <- "HSC"
+
+meta$Trust <- "No"
+meta[(meta$Level %in% c("HSC_Medium","HSC_High") & meta$predicted.celltype.l2 == "HSC"), "Trust"] <- "HSC"
+meta$azim <- "No"
+meta[meta$predicted.celltype.l2 == "HSC", "azim"] <- "HSC"
+
+obj <- AddMetaData(obj, meta$prediction, col.name = "Prediction")
+obj <- AddMetaData(obj, meta$Level, col.name = "Level")
+obj <- AddMetaData(obj, meta$Trust, col.name = "Trust")
+obj <- AddMetaData(obj, meta$azim, col.name = "azim")
+
+meta <- obj@meta.data
+
+# HSC Plot Density
+umap_coords <- as.data.frame(Embeddings(obj, "umap.harmony"))
+umap_coords$cell <- rownames(umap_coords)
+all_coords <- merge(umap_coords, obj@meta.data, by.x = "cell", by.y="cells")
+highlighted_coords <- all_coords[(all_coords$Clusters == "Cluster_7" & all_coords$Trust == "HSC"), ]
+
+scale.col <- cet_pal(10, name = "fire")
+custom_colors <- c("white",  "black", scale.col)
+
+p <- ggplot() +
+  geom_point(data = all_coords, aes(x = umapharmony_1, y = umapharmony_2), 
+             color = "grey", alpha = 0.5) +
+  geom_density_2d_filled(data = highlighted_coords, 
+                         aes(x = umapharmony_1, y = umapharmony_2, 
+                             fill = as.numeric(after_stat(level))), 
+                         alpha = 0.75, n = 150, h = c(1.2, 1.2), color = NA) +
+  scale_fill_gradientn(colours = custom_colors) +
+  labs(fill = "HSC Density") +
+  theme_classic() +
+  ggtitle("HSC cells")
+
+ggsave("plots/UMAP_HSCscore_Density.png", p, height=5.5, width=6.8, dpi=300)
+```
+
+# **PART 9 - scTE Data**
+
+scTE is a Python package developed to quantify the expression of transposable elements (TEs) in single-cell sequencing data.
+Both the tutorial and the README.txt can be found here: https://github.com/JiekaiLab/scTE
+
+**IMPORTANT: This step requires Seurat and SeuratObject to be downgraded to version < 5.0**
+
+## HD (Control)
+
+```{r scTE-Control, warning=FALSE, eval=FALSE}
+wt_dir <- here("counts", "HD")
+
+main_dirs <- list.dirs(wt_dir, full.names = TRUE, recursive = FALSE)
+
+# Loop through each main directory
+for (main_dir in main_dirs) {
+  # Get the subdirectories inside each main directory
+  sub_dirs <- list.dirs(main_dir, full.names = TRUE, recursive = FALSE)
+  
+  # Loop through each subdirectory
+  for (sub_dir in sub_dirs) {
+    
+    input_file <- file.path(sub_dir, "outs/filtered", "out.h5ad")
+    
+    if (file.exists(input_file)) {
+      h5_file <- Convert(input_file, dest = "h5seurat", overwrite = FALSE)
+      project <- basename(main_dir) 
+      data <- LoadH5Seurat(h5_file)
+      data@project.name <- project
+      project_name <- gsub("_counts", "", basename(sub_dir))
+      data <- AddMetaData(data, project_name, col.name = "Sample")
+      data <- AddMetaData(data, "HD", col.name = "Condition")
+      assign(project_name, data, envir = .GlobalEnv)  
+    }
+  }
+}
+
+# Merge
+cell_ids <- paste0("HD", c(1:6))
+save <- ls(pattern = "^SRR")
+obj_list <- mget(save)
+hd <- merge(x = obj_list[[1]], y = obj_list[2:length(obj_list)], add.cell.ids = cell_ids)
+ncol(hd)
+
+rm(list=save)
+```
+
+## FPD
+
+```{r scTE-FPD, warning=FALSE, eval=FALSE}
+fpd_dir <- here("counts", "FPD")
+
+main_dirs <- list.dirs(fpd_dir, full.names = TRUE, recursive = FALSE)
+
+# Loop through each main directory
+for (main_dir in main_dirs) {
+  # Get the subdirectories inside each main directory
+  sub_dirs <- list.dirs(main_dir, full.names = TRUE, recursive = FALSE)
+  
+  # Loop through each subdirectory
+  for (sub_dir in sub_dirs) {
+    
+    input_file <- file.path(sub_dir, "outs/filtered", "out.h5ad")
+    
+    if (file.exists(input_file)) {
+      h5_file <- Convert(input_file, dest = "h5seurat", overwrite = FALSE)
+      project <- basename(main_dir) 
+      data <- LoadH5Seurat(h5_file)
+      data@project.name <- project
+      project_name <- gsub("_counts", "", basename(sub_dir))
+      data <- AddMetaData(data, project_name, col.name = "Sample")
+      data <- AddMetaData(data, "FPD", col.name = "Condition")
+      assign(project_name, data, envir = .GlobalEnv)  
+    }
+  }
+}
+
+# Merge
+cell_ids <- paste0("FPD", c(1:24))
+save <- ls(pattern = "^SRR")
+obj_list <- mget(save)
+fpd <- merge(x = obj_list[[1]], y = obj_list[2:length(obj_list)], add.cell.ids = cell_ids)
+ncol(fpd)
+
+rm(list=save)
+```
+
+## Merging Conditions
+
+```{r scTE-merging, warning=FALSE,eval=FALSE}
+# Scale & Normalize
+hd <- NormalizeData(object = hd)
+hd <- FindVariableFeatures(object = hd)
+hd <- ScaleData(object = hd)
+
+fpd <- NormalizeData(object = fpd)
+fpd <- FindVariableFeatures(object = fpd)
+fpd <- ScaleData(object = fpd)
+
+merge <- merge(hd, c(fpd))
+dim(merge) 
+colnames(merge) <- paste0(colnames(merge), "-1")
+
+save(merge, file="rda/merge_scTE.rda")
+```
+
+## Loading Gencode Files
+
+This steps requires using reference files.
+
+Download required files from: 
+https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_48/gencode.v48.annotation.gtf.gz
+https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/
+
+### Genes 
+
+```{r load-genes, warning=FALSE,eval=FALSE}
+gencode = "gencode/gencode.v48.annotation.gtf.gz"
+gunzip(gencode)
+gencode <- readGFF("gencode/gencode.v48.annotation.gtf")
+colnames(gencode)
+genes <- gencode[,c(1,3:5,7,9,10,11,15)]
+colnames(genes)
+names(genes) <- c("seqname","Gene.Type","start","end","strand",
+                  "Gene.ID","Type","Gene.Name","Transc.Type")
+
+genes <- genes[genes$Gene.Type %in% "gene",] 
+genes <- genes[,-c(2,9)]
+
+genes <- genes[grep("+_PAR_+",genes$Gene.ID,invert=T),]
+aux <- strsplit(genes$Gene.ID, "\\." )
+aux <- unlist(lapply(aux, "[[", 1 )) 
+genes$Gene.ID <- aux
+rownames(genes) <- aux 
+
+save(gencode, genes, file="rda/gencodeV48.rda")
+```
+
+### Transposable Elements (TEs)
+
+```{r load-tes, warning=FALSE,eval=FALSE}
+file_name = "gencode/rmsk.txt.gz"
+gunzip(file_name)
+
+TE <- read.table("gencode/rmsk.txt", header = FALSE, sep = "")
+names(TE) <- c("bin","swScore","milliDiv","milliDel","millilns","seqnames",
+               "start","end","Gene.Left","strand","TE.Name","TE.Class",
+               "TE.Family","TE.start","TE.end","TE.Left","ID")
+
+TEs <- TE[,c(6:8,10:15)]
+
+save(TEs, file="rda/TEs.rda")
+```
+
+### Integrating Genes & TEs
+
+```{r integration, warning=FALSE,eval=FALSE}
+load("rda/gencodeV48.rda")
+load("rda/TEs.rda")
+
+x <- TEs
+rm(TEs)
+
+gr <- makeGRangesFromDataFrame(x, keep.extra.columns=TRUE)
+names <- mcols(gr)$TE.Name
+
+gen.gr <- makeGRangesFromDataFrame(genes, keep.extra.columns=TRUE)
+
+overlap <- suppressWarnings(findOverlaps(gr,gen.gr,ignore.strand=T, 
+                                         type="within"))
+a <- as.data.frame(overlap)
+a <- a[with(a,order(queryHits,subjectHits)),]
+
+genes$has.TE <- FALSE
+genes[(a$subjectHits),"has.TE"] <- TRUE
+table(genes$has.TE) 
+
+genes$te.id <- NA
+aux <- gr[(a$subjectHits),]
+length(aux)
+
+genes[(a$subjectHits), "te.id"] <- mcols(aux)[,1]
+keep <- genes[a$subjectHits,]
+
+keep$unique<- paste(keep$Gene.Name, keep$te.id, sep = "_")
+keep <- keep[!duplicated(keep$unique),] 
+
+save(keep, file="rda/TEs_annotated.rda")
+```
+
+### Getting the Promoters
+
+```{r promoters, warning=FALSE,eval=FALSE}
+load("rda/gencodeV48.rda")
+load("rda/TEs.rda")
+load("rda/TEs_annotated.rda")
+
+x <- TEs
+rm(TEs)
+
+promoter <- promoters(makeGRangesFromDataFrame(genes, TRUE))
+
+gr <- makeGRangesFromDataFrame(x, keep.extra.columns=TRUE)
+names <- mcols(gr)$TE.Name
+
+overlap <- suppressWarnings(findOverlaps(gr,promoter,ignore.strand=T, 
+                                         type="within"))
+a <- as.data.frame(overlap)
+a <- a[with(a,order(queryHits,subjectHits)),]
+
+genes$TE.promoters <- FALSE
+genes[(a$subjectHits),"TE.promoters"] <- TRUE
+table(genes$TE.promoters) 
+genes$te.id <- NA
+aux <- gr[(a$subjectHits),]
+length(aux)
+genes[(a$subjectHits), "te.id"] <- mcols(aux)[,1]
+keep.promoters <- genes[a$subjectHits,]
+
+keep.promoters$unique<- paste(keep.promoters$Gene.Name, keep.promoters$te.id,
+                              sep = "_")
+keep.promoters <- keep.promoters[!duplicated(keep.promoters$unique),] 
+
+keep$in.promoter <- "FALSE"
+keep[keep$Gene.Name %in% keep.promoters$Gene.Name, "in.promoter"] <- "TRUE"
+table(keep$in.promoter) 
+
+save(keep.promoters, file="rda/TEs_promoters.rda")
+save(keep, file="rda/TEs_inpromoters_ingenes.rda")
+```
+
+## Separating Features (Genes from TEs)
+
+**IMPORTANT: This step requires Seurat to be updated to version > 5.0**
+
+```{r genes-tes, warning=FALSE,eval=FALSE}
+load("rda/gencodeV48.rda")
+load("rda/merge_scte.rda")
+
+new <- ifelse(rownames(merge) %in% genes$Gene.Name, 
+              paste0("Gene.", rownames(merge)), 
+              paste0("TE.", rownames(merge)))
+
+nrow(merge) 
+
+merge[["RNA3"]] <- as(object = merge[["RNA"]], Class = "Assay")
+merge[["RNA5"]] <- as(object = merge[["RNA3"]], Class = "Assay5")
+
+merge <- Seurat.utils::RenameGenesSeurat(
+  obj = merge,
+  newnames = new,
+  assay =  "RNA5",  
+  slots = c("counts","data"))  
+
+ncol(merge) 
+
+DefaultAssay(merge) <- "RNA5"
+
+genes.scte <- rownames(merge)[grepl("Gene.", rownames(merge))]
+te.scte <- rownames(merge)[grepl("TE.", rownames(merge))]
+
+seurat_genes <- subset(merge, features = genes.scte)
+seurat_te <- subset(merge, features = te.scte)
+
+nrow(seurat_genes) 
+nrow(seurat_te) 
+
+# Converting the name again
+new <- gsub("^Gene\\.", "", rownames(seurat_genes))
+
+seurat_genes <- Seurat.utils::RenameGenesSeurat(
+  obj = seurat_genes,
+  newnames = new,
+  assay = "RNA5",  
+  slots = c("counts","data"))
+
+rm(new)
+
+new <- gsub("^TE\\.", "", rownames(seurat_te))
+
+seurat_te <- Seurat.utils::RenameGenesSeurat(
+  obj = seurat_te,
+  newnames = new,
+  assay = "RNA5",  
+  slots = c("counts","data"))
+
+save(seurat_te, seurat_genes, file="rda/scTE_gencode.rda")
+```
+
+## Filtering Cells and Genes Based on the Cellranger Seurat Object
+
+```{r filtering-cell, warning=FALSE,eval=FALSE}
+# Seurat genes
+seurat_genes@meta.data$cells <- rownames(seurat_genes@meta.data)
+seurat_genes <- AddMetaData(seurat_genes, rownames(seurat_genes@meta.data), 
+                            col.name = "cells")
+
+common_cols <- intersect(colnames(seurat_genes), colnames(obj))
+length(common_cols) 
+
+seurat_genes <- seurat_genes[,colnames(seurat_genes) %in% common_cols] 
+dim(seurat_genes) 
+
+# Seurat TEs
+seurat_te <- seurat_te[,colnames(seurat_te) %in% common_cols] 
+dim(seurat_te)
+
+# Adding metadata
+seurat_te <- AddMetaData(seurat_te, rownames(seurat_te@meta.data),
+                         col.name = "cells")
+
+meta <- obj@meta.data[,c(5,13,18,23)]
+
+seurat_genes <- AddMetaData(seurat_genes, meta)
+seurat_te <- AddMetaData(seurat_te, meta)
+
+# Filtering genes
+features <- rownames(obj)
+
+seurat_genes <- subset(seurat_genes, features = features)
+```
+
+## Normalize & Scale Seurat TEs
+
+```{r norm-scale-scte, warning=FALSE,eval=FALSE}
+seurat_te <- JoinLayers(seurat_te, layers="RNA5")
+
+seurat_te <- NormalizeData(
+  object = seurat_te,
+  normalization.method = "LogNormalize",
+  scale.factor = 10000)
+
+seurat_te <- ScaleData(seurat_te, features=rownames(seurat_te))
+seurat_te <- FindVariableFeatures(seurat_te)
+seurat_te <- RunPCA(seurat_te)
+ElbowPlot(seurat_te,ndims = 50) 
+seurat_te <- FindNeighbors(seurat_te, dims = 1:12)
+seurat_te <- FindClusters(seurat_te, resolution = 1, cluster.name = "umap.inintegrated")
+seurat_te <- RunUMAP(object = seurat_te, dims= 1:12, reduction = "pca", reduction.name = "umap.unintegrated")
+DimPlot(seurat_te, reduction = "umap.unintegrated", label = T, label.box =TRUE) + NoLegend()
+
+Idents(seurat_te) <- "umap.inintegrated"
+
+seurat_te[["RNA5"]] <- split(seurat_te[["RNA5"]], f = seurat_te$Condition)
+
+seurat_te <- IntegrateLayers(
+  object = seurat_te, method = HarmonyIntegration,
+  orig.reduction = "pca", new.reduction = "harmony"
+)
+
+seurat_te <- FindNeighbors(seurat_te, reduction = "harmony", dims = 1:12)
+seurat_te <- FindClusters(seurat_te, resolution = 1, cluster.name = "harmony_clusters")
+seurat_te <- RunUMAP(seurat_te, reduction = "harmony", dims = 1:12, reduction.name = "umap.harmony")
+
+DimPlot(seurat_te, reduction = "umap.harmony", group.by = "Condition")
+
+save(seurat_genes, seurat_te, file="rda/seurats_scte.rda")
+save(merge, file="rda/merge_scTE.rda")
+
+rm(list=ls())
+gc()
+```
+
+## Distribution of TEs in the scTE Seurat Object
+
+```{r distribution-scte, warning=FALSE,eval=FALSE}
+load("rda/TEs.rda")
+load("rda/seurats_scte.rda")
+rm(seurat_genes)
+
+table(TEs$TE.Class)
+
+TEs[TEs$TE.Class == "LINE?", "TE.Class"] <- "LINE"
+TEs[TEs$TE.Class == "SINE?", "TE.Class"] <- "SINE"
+TEs[TEs$TE.Class == "DNA?", "TE.Class"] <- "DNA"
+TEs[TEs$TE.Class == "LTR?", "TE.Class"] <- "LTR"
+TEs[TEs$TE.Class == "RC?", "TE.Class"] <- "RC"
+
+scTE_class <- data.frame(TE = rownames(seurat_te),
+                         TE.Class = "Unknown")
+
+match_indices <- match(scTE_class$TE, TEs$TE.Name)
+a <- na.omit(match_indices)
+
+scTE_class$TE.Class[!is.na(match_indices)] <- TEs$TE.Class[match_indices[!is.na(match_indices)]]
+table(scTE_class$TE.Class)
+
+see <- scTE_class[scTE_class$TE.Class == "Unknown",]
+
+see[substr(see$TE, 1,2) == "RF", "TE.Class"] <- "LINE"
+see[substr(see$TE, 1,3) == "AC0", "TE.Class"] <- "DNA"
+see[substr(see$TE, 1,3) == "ABB", "TE.Class"] <- "DNA"
+see[substr(see$TE, 1,3) == "ABH", "TE.Class"] <- "DNA"
+see[substr(see$TE, 1,4) == "AARS", "TE.Class"] <- "DNA"
+see[substr(see$TE, 1,3) == "AB0", "TE.Class"] <- "DNA"
+
+table(see$TE.Class)
+
+scTE_class[scTE_class$TE %in% see$TE, "TE.Class"] <- see$TE.Class[see$TE %in% scTE_class$TE]
+table(scTE_class$TE.Class)
+
+scTE_class[substr(scTE_class$TE, 1,5) == "Gene.", "TE.Class"] <- "Remove"
+scTE_class <- scTE_class[!scTE_class$TE.Class == "Remove",]
+scTE_class <- scTE_class[!duplicated(scTE_class$TE),]
+
+save(scTE_class, file="rda/scTE_class.rda")
+
+# Plotting 
+data <- scTE_class %>%
+  group_by(TE.Class) %>%
+  summarize(Counts = n())
+
+data$TE.Class <- factor(data$TE.Class, levels = c("DNA","LTR","LINE","SINE","Satellite",
+                                                  "Simple_repeat","Unknown"))
+
+data$Percentage <- data$Counts*100/21978
+
+data$Percentage <- round(data$Percentage, 2)
+
+data$Label <- paste0(data$Percentage, "%")
+
+color <- brewer.pal(n=nrow(data),name = "Pastel1")
+
+png("plots/Pie_TEs.png", width = 15, height = 12, units = "in", res = 300)
+pie3D(
+  x = data$Counts,
+  labels = data$Label,
+  explode = 0.05,
+  col = color,
+  labelcex = 0.75,
+  main = "Percentage of each TE Class",
+  theta = 1.2
+)
+legend(
+  "topright",
+  legend = c("DNA","LTR","LINE","SINE","Satellite",
+             "Simple_repeat","Unknown"),
+  fill = color,
+  cex = 0.9
+)
+dev.off()
+
+rm(list=ls())
+gc()
+```
+
+## Organizing "seurat_te" File
+
+```{r org-scte, warning=FALSE, message=FALSE,eval=FALSE}
+load("~/RUNX1/seurats_scte.rda")
+rm(seurat_genes)
+
+table(seurat_te@meta.data$predicted.celltype.l2)
+
+seurat_te@meta.data$Type <- "Unknown"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "ASDC", "Type"] <- "Dendritic cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "BaEoMa", "Type"] <- "Mix of cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD14 Mono", "Type"] <- "Monocytes"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD16 Mono", "Type"] <- "Monocytes"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD4 Naive", "Type"] <- "CD4 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD4 Effector", "Type"] <- "CD4 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD4 Memory", "Type"] <- "CD4 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD8 Naive", "Type"] <- "CD8 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD8 Effector", "Type"] <- "CD8 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD8 Memory", "Type"] <- "CD8 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD8 Effector_1", "Type"] <- "CD8 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD8 Effector_2", "Type"] <- "CD8 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CD8 Effector_3", "Type"] <- "CD8 T-cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "cDC1", "Type"] <- "Dendritic cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "cDC2", "Type"] <- "Dendritic cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "MAIT", "Type"] <- "T cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "ILC", "Type"] <- "Innate lymphoid cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Plasma", "Type"] <- "B cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "T Proliferating", "Type"] <- "T cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "NK CD56+", "Type"] <- "NK cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "NK", "Type"] <- "NK cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "NK Proliferating", "Type"] <- "NK cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "pre-mDC", "Type"] <- "Dendritic cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "pre-pDC", "Type"] <- "Dendritic cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "pDC", "Type"] <- "Dendritic cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Prog Mk", "Type"] <- "Megakaryocytes"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "transitional B", "Type"] <- "B cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Memory B", "Type"] <- "B cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Naive B", "Type"] <- "B cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "pro B", "Type"] <- "B cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "pre B", "Type"] <- "B cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Early Eryth", "Type"] <- "Erythrocyte cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Late Eryth", "Type"] <- "Erythrocyte cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Stromal", "Type"] <- "Stromal cells"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "HSC", "Type"] <- "HSC"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "GMP", "Type"] <- "GMP"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "EMP", "Type"] <- "EMP"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "CLP", "Type"] <- "CLP"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "LMPP", "Type"] <- "LMPP"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Macrophage", "Type"] <- "Macrophage"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 == "Platelet", "Type"] <- "Platelet"
+
+table(seurat_te@meta.data$Type)
+table(seurat_te@meta.data$predicted.celltype.l2)
+
+seurat_te@meta.data$Group <- "Unknown"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in% 
+                      c("HSC","LMPP","CLP","GMP","EMP","Prog Mk","pre B","pro B",
+                        "pre-mDC","pre-pDC"), "Group"] <- "HSPC"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in% 
+                      c("Early Eryth","Late Eryth","Platelet"), "Group"] <- "Erythroid and Megakaryocytic Lineage"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in% 
+                      c("CD14 Mono","CD16 Mono","Macrophage","BaEoMa","ASDC",
+                        "cDC1","cDC2","pDC"), "Group"] <- "Myeloid Lineage"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in%
+                      c("CD4 Naive","CD4 Memory","CD4 Effector"), "Group"] <- "Lymphoid Lineage"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in%
+                      c("CD8 Naive","CD8 Memory","CD8 Effector_1","CD8 Effector_2",
+                        "CD8 Effector_3"), "Group"] <- "Lymphoid Lineage"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in% 
+                      c("T Proliferating","MAIT","ILC","NK","NK CD56+",
+                        "NK Proliferating"), "Group"] <- "Lymphoid Lineage"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in% 
+                      c("Naive B","Memory B","transitional B","Plasma"), "Group"] <- "Lymphoid Lineage"
+seurat_te@meta.data[seurat_te@meta.data$predicted.celltype.l2 %in%
+                      c("Stromal"), "Group"] <- "Support Cells"
+
+save(seurat_te, file="rda/seurat_te_types.rda")
+```
+
+# **PART 10 - Analyzing Exclusively HSCs**
+
+```{r exclus-LTHSC, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/seurats_scte.rda")
+rm(seurat_genes)
+load("rda/scTE_class.rda")
+
+colnames(seurat_te@meta.data)
+
+hsc <- subset(seurat_te, subset = Type %in% c("HSC"))
+dim(hsc) 
+
+hsc <- subset(hsc, features = scTE_class$TE)
+dim(hsc)
+
+hsc <- JoinLayers(hsc)
+save(hsc, file = "rda/seurat_te_HSC_tmp.rda")
+
+# Heatmap
+meta <- hsc@meta.data
+matrix <- as.matrix(hsc@assays$RNA5$scale.data)
+raw <- as.matrix(hsc@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+table(meta$Condition)
+meta$Condition <- factor(meta$Condition, levels = c("HD","FPD"))
+condition <- factor(c(rep("HD",3095),
+                      rep("FPD", 2030)))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  
+  a <- mean(raw[te,condition=="HD"])
+  b <- mean(raw[te,condition=="FPD"])
+  
+  all[all$TE == te, "HD"] <- a
+  all[all$TE == te, "FPD"] <- b
+  
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"), 
+                     values_to = "Counts")
+
+a <- all2[all2$Counts >= 0.5,]
+b <- unique(a$TE) 
+
+raw_mat <- raw[b,]
+dim(raw_mat)
+zscore <- function(x) {
+  (x - mean(x)) / sd(x)
+}
+data <- as.data.frame(raw_mat)
+zscore_data <- t(apply(data, 1, zscore))
+dist_matrix <- dist(zscore_data)
+
+a <- t(zscore_data)
+hc <- hclust(dist(a), method = "ward.D2")
+num_clusters <- 10
+cluster_colors <- brewer.pal(num_clusters, "Dark2")
+
+dend <- as.dendrogram(hc)
+dend <- color_branches(dend, k = num_clusters, col = cluster_colors)
+dend <- color_labels(dend, k = num_clusters, col = cluster_colors)
+
+ha <- HeatmapAnnotation(
+  Condition = meta$Condition,
+  col = list(
+    Condition = c(
+      "HD" = "gray82", 
+      "FPD" = "red3"
+    )),
+  annotation_name_side = "left",
+  show_legend = TRUE,
+  show_annotation_name = FALSE
+)
+
+rownames(scTE_class) <- scTE_class$TE
+
+scTE_class <- scTE_class[rownames(zscore_data),]
+order <- c("DNA","LTR","LINE","SINE","Satellite",
+           "Simple_repeat","Unknown")
+scTE_class$TE.Class <- factor(scTE_class$TE.Class, levels= order)
+scTE_class <- scTE_class[order(scTE_class$TE.Class),]
+
+zscore_data <- zscore_data[rownames(scTE_class),]
+
+class <- scTE_class$TE.Class
+class <- unique(class)
+class <- factor(class, levels= c("DNA","LTR","LINE","SINE","Satellite",
+                                 "Simple_repeat","Unknown"))
+count_class <- length(class) 
+
+getPalette <- colorRampPalette(brewer.pal(5, "Set1"))
+class_colors <- getPalette(count_class)
+show_col(class_colors)
+list_cluster_colors <- setNames(class_colors, class)
+
+h_class <- rowAnnotation(Class = scTE_class$TE.Class,
+                         col = list(Class = list_cluster_colors),
+                         show_annotation_name = FALSE)
+
+names <- rowAnnotation(
+  labels = anno_text(rownames(zscore_data), 
+                     which = "row",
+                     gp = gpar(fontsize = 1, lineheight = 8))) 
+
+Heatmap(zscore_data, 
+        name = "z-score per row",
+        show_column_names = FALSE,
+        column_title = NULL,
+        show_row_names = FALSE, 
+        cluster_rows = FALSE,
+        show_row_dend = FALSE,
+        column_dend_height = unit(4, "cm"),
+        top_annotation = ha,
+        cluster_columns = dend, 
+        show_column_dend = TRUE,
+        right_annotation = names,
+        left_annotation = h_class,
+        border = TRUE)
+
+# Labeling Groups
+labels_list <- cutree(hc, k = 10)  
+cluster_labels <- split(names(labels_list), labels_list)
+
+for (i in 1:length(cluster_labels)) {
+  cat("Cluster", i, ":\n")
+  print(cluster_labels[[i]])
+  cat("\n")
+}
+
+g10 <- as.data.frame(cutree(hc, k = 10))
+colnames(g10) <- "Group"
+
+merge.ht <- merge(g10,meta[,c("cells","Condition")],by.x=0, by.y="cells")
+rownames(merge.ht) <- merge.ht$Row.names
+merge.ht$Row.names <- NULL
+
+merge.ht$Group <- paste0("Group_", merge.ht$Group)
+merge.ht <- merge.ht[rownames(meta),]
+
+ha <- HeatmapAnnotation(
+  Group = merge.ht$Group,
+  Condition = merge.ht$Condition,
+  col = list(
+    Group = c(
+      "Group_1" = "#E7298A",
+      "Group_2" = "#7570B3",
+      "Group_3" = "darkred",
+      "Group_4" = "#666666",
+      "Group_5" = "#D95F02",
+      "Group_6" = "#1B9E77",
+      "Group_7" = "#A6761D",
+      "Group_8" = "cyan2",
+      "Group_9" = "#E6AB02",
+      "Group_10" ="#66A61E"),
+    Condition = c(
+      "HD" = "gray82", 
+      "FPD" = "red3"
+    )),
+  annotation_name_side = "left",
+  show_legend = TRUE,
+  show_annotation_name = FALSE
+)
+
+htm <- Heatmap(zscore_data, 
+        name = "z-score per row",
+        show_column_names = FALSE,
+        column_title = NULL,
+        show_row_names = FALSE, 
+        cluster_rows = FALSE,
+        show_row_dend = FALSE,
+        column_dend_height = unit(4, "cm"),
+        top_annotation = ha,
+        cluster_columns = dend, 
+        show_column_dend = TRUE,
+        right_annotation = names,
+        left_annotation = h_class,
+        border = TRUE)
+
+png("plots/Heatmap_TEs_HSCs.png",
+    width = 16, height = 12, units = "in", res = 300)
+grid.newpage()
+draw(htm, newpage = FALSE)
+dev.off()
+
+merge.ht <- merge.ht[order(merge.ht$Group),]
+
+save(merge.ht, file="rda/Groups_Heatmap_TEs_HSCs.rda")
+
+# Rearranging Groups Based on Heatmap Visualization
+merge.ht$Group_ed <- ""
+merge.ht[merge.ht$Group == "Group_2", "Group_ed"] <- "Group_1"
+merge.ht[merge.ht$Group == "Group_4", "Group_ed"] <- "Group_2"
+merge.ht[merge.ht$Group == "Group_6", "Group_ed"] <- "Group_2"
+merge.ht[merge.ht$Group == "Group_1", "Group_ed"] <- "Group_3"
+merge.ht[merge.ht$Group == "Group_8", "Group_ed"] <- "Group_3"
+merge.ht[merge.ht$Group == "Group_9", "Group_ed"] <- "Group_4"
+merge.ht[merge.ht$Group == "Group_10", "Group_ed"] <- "Group_4"
+merge.ht[merge.ht$Group == "Group_3", "Group_ed"] <- "Group_5"
+merge.ht[merge.ht$Group == "Group_5", "Group_ed"] <- "Group_5"
+merge.ht[merge.ht$Group == "Group_7", "Group_ed"] <- "Group_5"
+
+merge.ht$Group <- NULL
+colnames(merge.ht)[2] <- "Group"
+
+save(merge.ht, file="rda/Groups_Heatmap_Edited_TEs_HSCs.rda")
+
+rm(list=ls())
+gc()
+```
+
+## Plotting Edited HD and FPD Groups Side by Side
+
+```{r HSC-side, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/seurat_te_HSC_tmp.rda")
+load("rda/scTE_class.rda")
+load("rda/Groups_Heatmap_Edited_TEs_HSCs.rda")
+
+# HD
+hsc <- JoinLayers(hsc)
+
+hd <- subset(hsc, subset=Condition == "HD")
+dim(hd) 
+
+meta <- hd@meta.data
+meta <- merge.ht[rownames(merge.ht) %in% rownames(meta),]
+
+meta$Group <- factor(meta$Group, levels = paste0("Group_", 1:5))
+
+meta <- meta[order(meta$Group),]
+
+matrix <- as.matrix(hd@assays$RNA5$scale.data)
+raw <- as.matrix(hd@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+
+table(meta$Condition)
+
+condition <- factor(c(rep("HD",2030)))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  
+  a <- mean(raw[te,condition=="HD"])
+  
+  all[all$TE == te, "HD"] <- a
+  
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"), values_to = "Counts")
+
+test <- all2[all2$Counts >= 1,]
+keep <- unique(test$TE) 
+
+raw_mat <- raw[keep,]
+dim(raw_mat)
+
+zscore <- function(x) {
+  (x - mean(x)) / sd(x)
+}
+
+data <- as.data.frame(raw_mat)
+zscore_data <- t(apply(data, 1, zscore))
+dist_matrix <- dist(zscore_data)
+a <- t(zscore_data)
+hc <- hclust(dist(a), method = "ward.D2")
+num_clusters <- 10
+
+color_palette <- colorRampPalette(brewer.pal(8, "Dark2"))
+cluster_colors <- color_palette(num_clusters)
+
+dend <- as.dendrogram(hc)
+dend <- color_branches(dend, k = num_clusters, col = cluster_colors)
+dend <- color_labels(dend, k = num_clusters, col = cluster_colors)
+
+rownames(scTE_class) <- scTE_class$TE
+
+scTE_class <- scTE_class[rownames(zscore_data),]
+order <- c("DNA","LTR","LINE","SINE","Satellite",
+           "Simple_repeat","Unknown")
+scTE_class$TE.Class <- factor(scTE_class$TE.Class, levels= order)
+scTE_class <- scTE_class[order(scTE_class$TE.Class),]
+
+zscore_data <- zscore_data[rownames(scTE_class),]
+
+class <- scTE_class$TE.Class
+class <- unique(class)
+class <- factor(class, levels= c("DNA","LTR","LINE","SINE","Satellite",
+                                 "Simple_repeat","Unknown"))
+
+h_class <- rowAnnotation(Class = scTE_class$TE.Class,
+                         col = list(
+                           Class = c(
+                             "DNA" = "#E41A1C",
+                             "LTR" = "#377EB8",
+                             "LINE" = "#4DAF4A",
+                             "SINE" = "#984EA3",
+                             "Satellite" = "#FFFF33",
+                             "Simple_repeat" = "#A65628",
+                             "Unknown" = "#F781BF")),
+                         show_annotation_name = FALSE)
+
+names <- rowAnnotation(
+  labels = anno_text(rownames(zscore_data), 
+                     which = "row",
+                     gp = gpar(fontsize = 3, lineheight = 8))) 
+
+ha <- HeatmapAnnotation(
+  Group = meta$Group,
+  Condition = meta$Condition,
+  col = list(
+    Condition = c("HD" = "gray82"),
+    Group = c(
+      "Group_1" = "#E7298A",
+      "Group_2" = "#7570B3",
+      "Group_3" = "darkred",
+      "Group_4" = "#666666",
+      "Group_5" = "#D95F02")),
+  annotation_name_side = "left",
+  show_legend = TRUE,
+  show_annotation_name = FALSE
+)
+
+hhd <- Heatmap(zscore_data, 
+                    name = "z-score per row",
+                    show_column_names = FALSE,
+                    column_title = NULL,
+                    show_row_names = FALSE, 
+                    cluster_rows = FALSE,
+                    show_row_dend = FALSE,
+                    column_dend_height = unit(4, "cm"),
+                    top_annotation = ha,
+                    cluster_columns = FALSE, 
+                    show_column_dend = FALSE,
+                    left_annotation = h_class,
+                    border = TRUE)
+
+save(hhd, zscore_data, meta, file="rda/Heatmap.HD_HSC.rda")
+rm(list=ls())
+
+# FPD
+load("rda/seurat_te_HSC_tmp.rda")
+load("rda/scTE_class.rda")
+load("rda/Groups_Heatmap_Edited_TEs_HSCs.rda")
+
+hsc <- JoinLayers(hsc)
+
+fpd <- subset(hsc, subset=Condition == "FPD")
+dim(fpd) # 3095
+
+meta <- fpd@meta.data
+meta <- merge.ht[rownames(merge.ht) %in% rownames(meta),]
+
+meta$Group <- factor(meta$Group, levels = paste0("Group_", 1:5))
+
+meta <- meta[order(meta$Group),]
+
+matrix <- as.matrix(fpd@assays$RNA5$scale.data)
+raw <- as.matrix(fpd@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+
+table(meta$Condition)
+
+condition <- factor(c(rep("FPD",3095)))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  
+  a <- mean(raw[te,condition=="FPD"])
+  
+  all[all$TE == te, "FPD"] <- a
+  
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"), values_to = "Counts")
+
+test <- all2[all2$Counts >= 1,]
+keep <- unique(test$TE) 
+
+raw_mat <- raw[keep,]
+dim(raw_mat)
+
+zscore <- function(x) {
+  (x - mean(x)) / sd(x)
+}
+
+data <- as.data.frame(raw_mat)
+zscore_data <- t(apply(data, 1, zscore))
+dist_matrix <- dist(zscore_data)
+a <- t(zscore_data)
+hc <- hclust(dist(a), method = "ward.D2")
+num_clusters <- 10
+
+color_palette <- colorRampPalette(brewer.pal(8, "Dark2"))
+cluster_colors <- color_palette(num_clusters)
+
+dend <- as.dendrogram(hc)
+dend <- color_branches(dend, k = num_clusters, col = cluster_colors)
+dend <- color_labels(dend, k = num_clusters, col = cluster_colors)
+
+rownames(scTE_class) <- scTE_class$TE
+
+scTE_class <- scTE_class[rownames(zscore_data),]
+order <- c("DNA","LTR","LINE","SINE","Satellite",
+           "Simple_repeat","Unknown")
+scTE_class$TE.Class <- factor(scTE_class$TE.Class, levels= order)
+scTE_class <- scTE_class[order(scTE_class$TE.Class),]
+
+zscore_data <- zscore_data[rownames(scTE_class),]
+
+class <- scTE_class$TE.Class
+class <- unique(class)
+class <- factor(class, levels= c("DNA","LTR","LINE","SINE","Satellite",
+                                 "Simple_repeat","Unknown"))
+
+h_class <- rowAnnotation(Class = scTE_class$TE.Class,
+                         col = list(
+                           Class = c(
+                             "DNA" = "#E41A1C",
+                             "LTR" = "#377EB8",
+                             "LINE" = "#4DAF4A",
+                             "SINE" = "#984EA3",
+                             "Satellite" = "#FFFF33",
+                             "Simple_repeat" = "#A65628",
+                             "Unknown" = "#F781BF")),
+                         show_annotation_name = FALSE)
+
+names <- rowAnnotation(
+  labels = anno_text(rownames(zscore_data), 
+                     which = "row",
+                     gp = gpar(fontsize = 3, lineheight = 8))) 
+
+ha <- HeatmapAnnotation(
+  Group = meta$Group,
+  Condition = meta$Condition,
+  col = list(
+    Condition = c("FPD" = "gray75"),
+    Group = c(
+      "Group_1" = "#E7298A",
+      "Group_2" = "#7570B3",
+      "Group_3" = "darkred",
+      "Group_4" = "#666666",
+      "Group_5" = "#D95F02")),
+  annotation_name_side = "left",
+  show_legend = TRUE,
+  show_annotation_name = FALSE
+)
+
+hfpd <- Heatmap(zscore_data, 
+               name = "z-score per row",
+               show_column_names = FALSE,
+               column_title = NULL,
+               show_row_names = FALSE, 
+               cluster_rows = FALSE,
+               show_row_dend = FALSE,
+               column_dend_height = unit(4, "cm"),
+               top_annotation = ha,
+               cluster_columns = FALSE, 
+               show_column_dend = FALSE,
+               left_annotation = h_class,
+               border = TRUE
+)
+
+save(hfpd, zscore_data, meta, file="rda/Heatmap.FPD_HSC.rda")
+
+rm(list=ls())
+
+# Heatmap (both conditions)
+load("rda/Heatmap.HD_HSC.rda")
+meta.hd <- meta
+mat.hd <- zscore_data
+rm(zscore_data,meta)
+
+load("rda/Heatmap.FPD_HSC.rda")
+meta.fpd <- meta
+mat.fpd <- zscore_data
+rm(zscore_data,meta)
+
+hhd_grob <- grid.grabExpr(draw(hhd, newpage = FALSE))
+hfpd_grob <- grid.grabExpr(draw(hfpd, newpage = FALSE))
+
+png("plots/Heatmap_TEs_HSC_side.png",
+    width = 25, height = 12, units = "in", res = 300)
+grid.arrange(hhd_grob, hfpd_grob, ncol = 2)
+dev.off()
+
+rm(list=ls())
+gc()
+```
+
+## TE Counts Level (Threshold)
+
+Here, we consider only DNA Transposon, LTR, SINE and LINE since these categories represent the majority of TEs.
+
+```{r TE-thr, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/scTE_class.rda")
+load("rda/seurat_te_HSC_tmp.rda")
+
+colors <- c("HD" = "gray82",
+            "FPD" = "gray75")
+
+sigFunc <- function(x) {
+  if (x < 0.001) {
+    return("***")
+  } else if (x <= 0.01) {
+    return("**")
+  } else if (x <= 0.05) {
+    return("*")
+  } else {
+    return(NA)
+  }
+}
+
+# LINE
+line <- scTE_class$TE[scTE_class$TE.Class == "LINE"]
+seurat <- subset(hsc, features = line)
+meta <- seurat@meta.data
+meta <- meta[order(meta$Condition),]
+matrix <- as.matrix(seurat@assays$RNA5$scale.data)
+raw <- as.matrix(seurat@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+meta$Condition <- factor(meta$Condition, levels = c("HD","FPD"))
+condition <- factor(c(rep("HD",2030),
+                      rep("FPD", 3095)))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  a <- mean(raw[te,condition=="HD"])
+  b <- mean(raw[te,condition=="FPD"])
+  all[all$TE == te, "HD"] <- a
+  all[all$TE == te, "FPD"] <- b
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"),
+                     values_to = "Counts")
+a <- all2[all2$Counts >= 1,]
+b <- unique(a$TE) 
+raw_mat <- raw[b,]
+
+meta$Condition <- as.character(meta$Condition)
+box <- as.data.frame(t(raw_mat))
+box$sum <- rowSums(box)
+box$Cond[rownames(box) %in% rownames(meta)] <- 
+  meta$Condition[rownames(meta) %in% rownames(box)]
+box$cells <- rownames(box)
+box <- box[,c(113:115)]
+
+df <- box %>%
+  pivot_longer(
+    cols = -c(Cond, cells),  
+    values_to = "counts")  
+
+line <- ggplot(data = df, mapping = aes(x = Cond, y = counts)) +
+  geom_boxplot(aes(fill = Cond), position = position_dodge(width = 1.5),
+               outlier.shape = 16, 
+               outlier.size = 0.65, outlier.colour = "red3") +  
+  geom_jitter(data = df %>% filter(counts %in% boxplot.stats(counts)$out),  
+              aes(x = Cond, y = counts), 
+              position = position_jitter(width = 0.2), 
+              size = 1.5, 
+              colour = "black") +
+  scale_fill_manual(values = colors, name = NULL) +
+  geom_hline(yintercept = 700, color = "gray85", linetype = "dashed", lwd=1) +
+  stat_boxplot(aes(Cond, counts), geom = 'errorbar', linetype = 1,
+               width = 0.3) + 
+  stat_summary(aes(group = Cond), fun = mean, geom = "point", size = 1.5, 
+               position = position_dodge(width = 0.75)) + 
+  labs(title = "",
+       x = "",
+       y = "Total Counts") +
+  geom_signif(test = "t.test", size = 0.25,
+              comparisons = list(c("HD", "FPD")),
+              map_signif_level = sigFunc,
+              y_position = max(df$counts)) +
+  scale_x_discrete(label = c("HD", 
+                             "FPD")) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(size = 8.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 12, color="black"), 
+    axis.text.x = element_text(size = 12, hjust = 1, face = "bold", color="black", angle = 45),
+    legend.position = "bottom",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/LINE_Boxplot.png", line, height=5.4, width=7.2, dpi=300)
+
+line.box <- df
+
+# SINE
+sine <- scTE_class$TE[scTE_class$TE.Class == "SINE"]
+seurat <- subset(hsc, features = sine)
+meta <- seurat@meta.data
+meta <- meta[order(meta$Condition),]
+matrix <- as.matrix(seurat@assays$RNA5$scale.data)
+raw <- as.matrix(seurat@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+meta$Condition <- factor(meta$Condition, levels = c("HD","FPD"))
+condition <- factor(c(rep("HD",2030),
+                      rep("FPD", 3095)))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  a <- mean(raw[te,condition=="HD"])
+  b <- mean(raw[te,condition=="FPD"])
+  all[all$TE == te, "HD"] <- a
+  all[all$TE == te, "FPD"] <- b
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"),
+                     values_to = "Counts")
+a <- all2[all2$Counts >= 1,]
+b <- unique(a$TE) 
+raw_mat <- raw[b,]
+
+meta$Condition <- as.character(meta$Condition)
+box <- as.data.frame(t(raw_mat))
+box$sum <- rowSums(box)
+box$Cond[rownames(box) %in% rownames(meta)] <- 
+  meta$Condition[rownames(meta) %in% rownames(box)]
+box$cells <- rownames(box)
+box <- box[,c(44:46)]
+
+df <- box %>%
+  pivot_longer(
+    cols = -c(Cond, cells),  
+    values_to = "counts")  
+
+sine <- ggplot(data = df, mapping = aes(x = Cond, y = counts)) +
+  geom_boxplot(aes(fill = Cond), position = position_dodge(width = 1.5),
+               outlier.shape = 16, 
+               outlier.size = 0.65, outlier.colour = "red3") +  
+  geom_jitter(data = df %>% filter(counts %in% boxplot.stats(counts)$out),  
+              aes(x = Cond, y = counts), 
+              position = position_jitter(width = 0.2), 
+              size = 1.5, 
+              colour = "black") +
+  scale_fill_manual(values = colors, name = NULL) +
+  geom_hline(yintercept = 2000, color = "gray85", linetype = "dashed", lwd=1) +
+  stat_boxplot(aes(Cond, counts), geom = 'errorbar', linetype = 1,
+               width = 0.3) + 
+  stat_summary(aes(group = Cond), fun = mean, geom = "point", size = 1.5, 
+               position = position_dodge(width = 0.75)) + 
+  labs(title = "",
+       x = "",
+       y = "Total Counts") +
+  geom_signif(test = "t.test", size = 0.25,
+              comparisons = list(c("HD", "FPD")),
+              map_signif_level = sigFunc,
+              y_position = max(df$counts)) +
+  scale_x_discrete(label = c("HD", 
+                             "FPD")) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(size = 8.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 12, color="black"), 
+    axis.text.x = element_text(size = 12, hjust = 1, face = "bold", color="black", angle = 45),
+    legend.position = "bottom",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/SINE_Boxplot.png", sine, height=5.4, width=7.2, dpi=300)
+
+sine.box <- df
+
+# LTR
+ltr <- scTE_class$TE[scTE_class$TE.Class == "LTR"]
+seurat <- subset(hsc, features = ltr)
+meta <- seurat@meta.data
+meta <- meta[order(meta$Condition),]
+matrix <- as.matrix(seurat@assays$RNA5$scale.data)
+raw <- as.matrix(seurat@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+meta$Condition <- factor(meta$Condition, levels = c("HD","FPD"))
+condition <- factor(c(rep("HD",2030),
+                      rep("FPD", 3095)))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  a <- mean(raw[te,condition=="HD"])
+  b <- mean(raw[te,condition=="FPD"])
+  all[all$TE == te, "HD"] <- a
+  all[all$TE == te, "FPD"] <- b
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"),
+                     values_to = "Counts")
+a <- all2[all2$Counts >= 1,]
+b <- unique(a$TE) 
+raw_mat <- raw[b,]
+
+meta$Condition <- as.character(meta$Condition)
+box <- as.data.frame(t(raw_mat))
+box$sum <- rowSums(box)
+box$Cond[rownames(box) %in% rownames(meta)] <- 
+  meta$Condition[rownames(meta) %in% rownames(box)]
+box$cells <- rownames(box)
+box <- box[,c(43:45)]
+
+df <- box %>%
+  pivot_longer(
+    cols = -c(Cond, cells),  
+    values_to = "counts")  
+
+ltr <- ggplot(data = df, mapping = aes(x = Cond, y = counts)) +
+  geom_boxplot(aes(fill = Cond), position = position_dodge(width = 1.5),
+               outlier.shape = 16, 
+               outlier.size = 0.65, outlier.colour = "red3") +  
+  geom_jitter(data = df %>% filter(counts %in% boxplot.stats(counts)$out),  
+              aes(x = Cond, y = counts), 
+              position = position_jitter(width = 0.2), 
+              size = 1.5, 
+              colour = "black") +
+  scale_fill_manual(values = colors, name = NULL) +
+  geom_hline(yintercept = 62, color = "gray85", linetype = "dashed", lwd=1) +
+  stat_boxplot(aes(Cond, counts), geom = 'errorbar', linetype = 1,
+               width = 0.3) + 
+  stat_summary(aes(group = Cond), fun = mean, geom = "point", size = 1.5, 
+               position = position_dodge(width = 0.75)) + 
+  labs(title = "",
+       x = "",
+       y = "Total Counts") +
+  geom_signif(test = "t.test", size = 0.25,
+              comparisons = list(c("HD", "FPD")),
+              map_signif_level = sigFunc,
+              y_position = max(df$counts)) +
+  scale_x_discrete(label = c("HD", 
+                             "FPD")) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(size = 8.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 12, color="black"), 
+    axis.text.x = element_text(size = 12, hjust = 1, face = "bold", color="black", angle = 45),
+    legend.position = "bottom",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/LTR_Boxplot.png", ltr, height=5.4, width=7.2, dpi=300)
+
+ltr.box <- df
+
+# DNA Transposon
+dna <- scTE_class$TE[scTE_class$TE.Class == "DNA"]
+seurat <- subset(hsc, features = dna)
+meta <- seurat@meta.data
+meta <- meta[order(meta$Condition),]
+matrix <- as.matrix(seurat@assays$RNA5$scale.data)
+raw <- as.matrix(seurat@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+meta$Condition <- factor(meta$Condition, levels = c("HD","FPD"))
+condition <- factor(c(rep("HD",2030),
+                      rep("FPD", 3095)))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  a <- mean(raw[te,condition=="HD"])
+  b <- mean(raw[te,condition=="FPD"])
+  all[all$TE == te, "HD"] <- a
+  all[all$TE == te, "FPD"] <- b
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"),
+                     values_to = "Counts")
+a <- all2[all2$Counts >= 1,]
+b <- unique(a$TE) 
+raw_mat <- raw[b,]
+
+meta$Condition <- as.character(meta$Condition)
+box <- as.data.frame(t(raw_mat))
+box$sum <- rowSums(box)
+box$Cond[rownames(box) %in% rownames(meta)] <- 
+  meta$Condition[rownames(meta) %in% rownames(box)]
+box$cells <- rownames(box)
+box <- box[,c(91:93)]
+
+df <- box %>%
+  pivot_longer(
+    cols = -c(Cond, cells),  
+    values_to = "counts")  
+
+dna <- ggplot(data = df, mapping = aes(x = Cond, y = counts)) +
+  geom_boxplot(aes(fill = Cond), position = position_dodge(width = 1.5),
+               outlier.shape = 16, 
+               outlier.size = 0.65, outlier.colour = "red3") +  
+  geom_jitter(data = df %>% filter(counts %in% boxplot.stats(counts)$out),  
+              aes(x = Cond, y = counts), 
+              position = position_jitter(width = 0.2), 
+              size = 1.5, 
+              colour = "black") +
+  scale_fill_manual(values = colors, name = NULL) +
+  geom_hline(yintercept = 190, color = "gray85", linetype = "dashed", lwd=1) +
+  stat_boxplot(aes(Cond, counts), geom = 'errorbar', linetype = 1,
+               width = 0.3) + 
+  stat_summary(aes(group = Cond), fun = mean, geom = "point", size = 1.5, 
+               position = position_dodge(width = 0.75)) + 
+  labs(title = "",
+       x = "",
+       y = "Total Counts") +
+  geom_signif(test = "t.test", size = 0.25,
+              comparisons = list(c("HD", "FPD")),
+              map_signif_level = sigFunc,
+              y_position = max(df$counts)) +
+  scale_x_discrete(label = c("HD", 
+                             "FPD")) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(size = 8.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 12, color="black"), 
+    axis.text.x = element_text(size = 12, hjust = 1, face = "bold", color="black", angle = 45),
+    legend.position = "bottom",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/DNA_Boxplot.png", dna, height=5.4, width=7.2, dpi=300)
+
+dna.box <- df
+
+# Merging all
+line.box$class <- "LINE"
+line.box$Group <- "High"
+line.box[line.box$counts <= 700, "Group"] <- "Low"
+table(line.box$Group)
+
+sine.box$class <- "SINE"
+sine.box$Group <- "High"
+sine.box[sine.box$counts <= 2000, "Group"] <- "Low"
+table(sine.box$Group)
+
+ltr.box$class <- "LTR"
+ltr.box$Group <- "High"
+ltr.box[ltr.box$counts <= 62, "Group"] <- "Low"
+table(ltr.box$Group)
+
+dna.box$class <- "DNA"
+dna.box$Group <- "High"
+dna.box[dna.box$counts <= 190, "Group"] <- "Low"
+table(dna.box$Group)
+
+box <- rbind(line.box,sine.box,ltr.box,dna.box)
+
+plot <- box %>%
+  group_by(Cond, cells) %>%
+  summarise(total = sum(counts))
+
+plot <- plot[order(plot$Cond),]
+plot$Cond <- factor(plot$Cond, levels=c("HD","FPD"))
+box_stats <- boxplot.stats(plot$total)
+outliers <- box_stats$out
+outlier_data <- plot %>% dplyr::filter(total %in% outliers)
+
+p <- ggplot(data = plot, mapping = aes(x = Cond, y = total)) +
+  geom_boxplot(aes(fill = Cond), position = position_dodge(width = 1.5),
+               outlier.shape = 16, 
+               outlier.size = 0.65, outlier.colour = "red3") +  
+  geom_jitter(data = plot %>% dplyr::filter(total %in% boxplot.stats(total)$out),  
+              aes(x = Cond, y = total), 
+              position = position_jitter(width = 0.2), 
+              size = 1.5, 
+              colour = "black") +
+  geom_hline(yintercept = 3000, color = "gray85", linetype = "dashed", lwd=1) +
+  scale_fill_manual(values = colors, name = NULL) +
+  stat_boxplot(aes(Cond, total), geom = 'errorbar',
+               linetype = 1, width = 0.3) + 
+  stat_summary(aes(group = Cond), fun = mean, geom = "point", size = 1.5, 
+               position = position_dodge(width = 0.75)) + 
+  labs(title = "",
+       x = "",
+       y = "Total counts") +
+  geom_signif(test = "t.test", size = 0.25,
+              comparisons = list(c("HD", "FPD")),
+              map_signif_level = sigFunc,
+              y_position = c(11000)) +
+  scale_x_discrete(label = c("HD", 
+                             "FPD")) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(size = 12, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 12, color="black"), 
+    axis.text.x = element_text(size = 12, hjust = 1, face = "bold", 
+                               color="black", angle = 45),
+    legend.position = "bottom",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/TEs_Boxplot_Threshold.png", p, height=5.4, width=7.2, dpi=300)
+
+plot$Level_Thr <- "High"
+plot[plot$total <= 3000, "Level_Thr"] <- "Low"
+
+save(line.box,sine.box,ltr.box,dna.box,box,plot, file="rda/Boxplots_HSC_TE_cutoff.rda")
+rm(list=ls())
+gc()
+```
+
+# **PART 11 - Final Plots LT-HSC**
+
+## Heatmap TEs
+
+```{r save-heatmap, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/Boxplots_HSC_TE_cutoff.rda")
+rm(dna.box, line.box, sine.box, ltr.box)
+load("rda/seurat_te_HSC_tmp.rda")
+load("rda/scTE_class.rda")
+load("rda/Groups_Heatmap_Edited_TEs_HSCs.rda")
+load("rda/seurats_harmony.rda")
+
+hsc <- JoinLayers(hsc)
+obj <- JoinLayers(obj)
+
+crang <- obj@meta.data
+metate <- hsc@meta.data
+crang <- crang[rownames(metate),]
+metate$Clusters <- NULL
+metate <- merge(metate, crang[,c("cells","Clusters")], by.x="cells", by.y="cells")
+rownames(metate) <- metate$cells
+
+hsc <- AddMetaData(hsc, metate$Clusters, col.name = "Clusters_cr")
+rm(metate,crang,obj)
+
+merge.ht$cells <- rownames(merge.ht)
+meta <- hsc@meta.data
+meta <- meta[rownames(merge.ht),]
+meta <- merge(meta, merge.ht[,c("Group","cells")], by.x="cells", by.y="cells")
+rownames(meta) <- meta[,1]
+meta <- meta[,-1]
+meta$Group.x <- NULL
+colnames(meta)[9] <- "Group"
+
+colnames(plot)[4] <- "Level"
+meta <- merge(x=meta, y=plot[,c("cells","Level","total")], by.x=0, by.y="cells")
+rownames(meta) <- meta[,1]
+meta <- meta[,-1]
+
+meta$Condition <- factor(meta$Condition, levels=c("HD","FPD"))
+
+meta$Group_ed <- ""
+meta[meta$Group == "Group_1", "Group_ed"] <- "Group_1"
+meta[meta$Group == "Group_2", "Group_ed"] <- "Group_2"
+meta[meta$Group == "Group_4", "Group_ed"] <- "Group_3"
+meta[meta$Group == "Group_3", "Group_ed"] <- "Group_4"
+meta[meta$Group == "Group_5", "Group_ed"] <- "Group_5"
+
+meta$Test <- ""
+meta[meta$Group_ed == "Group_1", "Test"] <- "Group_1"
+meta[(meta$Group_ed == "Group_2" & meta$Condition == "FPD" & meta$Level == "Low"), "Test"] <- "Group_2"
+meta[(meta$Group_ed == "Group_2" & meta$Condition == "HD" & meta$Level == "Low"), "Test"] <- "Group_2"
+meta[(meta$Group_ed == "Group_3" & meta$Level == "Low"), "Test"] <- "Group_2"
+meta[(meta$Group_ed == "Group_4" & meta$Condition == "FPD" & meta$Level == "Low"), "Test"] <- "Group_2"
+meta[(meta$Group_ed == "Group_4" & meta$Condition == "HD" & meta$Level == "Low"), "Test"] <- "Group_2"
+meta[(meta$Group_ed == "Group_2" & meta$Level == "High"), "Test"] <- "Group_3"
+meta[(meta$Group_ed == "Group_3" & meta$Level == "High"), "Test"] <- "Group_4"
+meta[(meta$Group_ed == "Group_4" & meta$Level == "High"), "Test"] <- "Group_5"
+meta[(meta$Group_ed == "Group_5" & meta$Level == "High"), "Test"] <- "Group_6"
+
+table(meta$Test)
+
+meta$Group <- NULL
+meta$Group_ed <- NULL
+
+colnames(meta)[11] <- "Group"
+
+order <- c("Group_1","Group_2","Group_3","Group_4","Group_5","Group_6")
+meta$Group <- factor(meta$Group, levels= order)
+
+order2 <- c("Low","High")
+meta$Level <- factor(meta$Level, levels= order2)
+
+meta <- meta[order(meta$Group, meta$Condition, meta$Level),]
+matrix <- as.matrix(hsc@assays$RNA5$scale.data)
+raw <- as.matrix(hsc@assays$RNA5$counts)
+matrix <- matrix[,rownames(meta)]
+raw <- raw[,rownames(meta)]
+
+condition <- factor(c(rep("HD",2030), rep("FPD","3095")))
+
+all <- data.frame(TE=rownames(raw))
+
+for (te in rownames(raw)) {
+  hd_values <- raw[te, condition == "HD"]
+  fpd_values <- raw[te, condition == "FPD"]
+  
+  a <- mean(hd_values, na.rm = TRUE)
+  b <- mean(fpd_values, na.rm = TRUE)
+  
+  all[all$TE == te, "HD"] <- a
+  all[all$TE == te, "FPD"] <- b
+}
+
+all2 <- pivot_longer(all, cols=-TE, names_to = c("Condition"), 
+                     values_to = "Counts")
+
+a <- all2[all2$Counts >= 1,]
+b <- unique(a$TE)
+
+raw_mat <- raw[b,]
+dim(raw_mat)
+
+zscore <- function(x) {
+  (x - mean(x)) / sd(x)
+}
+
+data <- as.data.frame(raw_mat)
+
+zscore_data <- t(apply(data, 1, zscore))
+
+rownames(scTE_class) <- scTE_class$TE
+
+scTE_class <- scTE_class[rownames(zscore_data),]
+order <- c("DNA", "LTR", "LINE", "SINE", "Satellite","Unknown")
+scTE_class$TE.Class <- factor(scTE_class$TE.Class, levels= order)
+scTE_class <- scTE_class[order(scTE_class$TE.Class),]
+
+zscore_data <- zscore_data[rownames(scTE_class),]
+
+class <- scTE_class$TE.Class
+class <- unique(class)
+class <- factor(class, levels= c("DNA", "LTR", "LINE", "SINE", "Satellite","Unknown"))
+
+h_class <- rowAnnotation(Class = scTE_class$TE.Class,
+                         col = list(
+                           Class = c("DNA" = "#E41A1C",
+                           "LTR" = "#377EB8",
+                           "LINE" = "#4DAF4A",
+                           "SINE" = "#984EA3",
+                           "Satellite" = "#FFFF33",
+                           "Unknown" = "#F781BF")),
+                         show_annotation_name = FALSE)
+
+names <- rowAnnotation(
+  labels = anno_text(rownames(zscore_data), 
+                     which = "row",
+                     gp = gpar(fontsize = 3, lineheight = 8))) 
+
+ha1 <- HeatmapAnnotation(
+  Level = meta$Level,
+  Condition = meta$Condition,
+  Group = meta$Group,
+  col = list(
+    Level = c("Low" = "lightblue", 
+              "High" = "blue2"),
+    Condition = c("HD" = "gray82",
+                  "FPD" = "red3"),
+    Group = c(
+        "Group_1" = "#386CB0",
+        "Group_2" = "#8DB6CD",
+        "Group_3" = "#FFF8DC",
+        "Group_4" = "#FFDEAD",
+        "Group_5" = "#FFC125",
+        "Group_6" = "#D95F02")),
+  annotation_name_side = "left",
+  show_legend = TRUE,
+  show_annotation_name = FALSE
+)
+
+sum_level <- as.data.frame(t(raw_mat))
+sum_level$sum_level <- rowSums(sum_level)
+sum_level$cells <- rownames(sum_level)
+sum_level <- sum_level[,c(393,394)]
+
+meta$total <- NULL
+meta <- merge(meta, sum_level, by.x=0, by.y="cells")
+rownames(meta) <- meta$Row.names
+meta$Row.names <- NULL
+
+meta <- meta[rownames(sum_level),]
+
+ha2 = HeatmapAnnotation(
+  dist1 = anno_points(
+    colSums(raw_mat), 
+    col = ifelse(meta$Level[match(colnames(raw),
+                                  rownames(meta))] == "Low", "lightblue", "blue2"),
+    pch = 16, size = unit(0.55, "mm"), 
+    bar_width = 1, 
+    border = TRUE,
+    height = unit(3.6, "cm")), 
+  show_annotation_name = FALSE)
+
+# Boxplot
+sum <- as.data.frame(t(zscore_data))
+sum$Total <- rowSums(sum)
+sum$cells <- rownames(sum)
+sum <- sum[,c(393,394)]
+sum <- sum[rownames(meta),]
+meta$cells <- rownames(meta)
+sum <- merge(sum, meta, by.x="cells",by.y="cells")
+
+cont = c(
+  "Group_1" = "#386CB0",
+  "Group_2" = "#8DB6CD",
+  "Group_3" = "#FFF8DC",
+  "Group_4" = "#FFDEAD",
+  "Group_5" = "#FFC125",
+  "Group_6" = "#D95F02")
+
+color = "#EEE5DE"
+
+# Anno point
+anno <- ggplot(sum, aes(x = Group, y = Total, fill = Type, color = Group)) +
+  geom_boxplot(width = 0.65, position = position_dodge(width = 0.75), 
+               outlier.shape = 16, 
+               outlier.size = 0.65, outlier.colour = "black",size= 0.2) +
+  stat_boxplot(geom = 'errorbar', linetype = 1, width = 0.25, 
+               position = position_dodge(width = 0.75)) + 
+  scale_fill_manual(values = color, name = NULL) +
+  scale_color_manual(values = cont, name = NULL) +
+  scale_y_continuous(limits = c(-500, 800), breaks = seq(-500, 800, by = 200)) +
+  labs(title = "",
+       x = "",
+       y = "") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 7, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 7, color = "black"), 
+    axis.text.x = element_blank(), 
+    legend.position = "none",
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white"),
+    plot.margin = margin(t = 1, r = 8, b = 1, l = -24)
+  )
+
+ha3 <- HeatmapAnnotation(
+  ggplot = anno_empty(height = unit(7, "cm"))
+)
+
+ha <- c(ha3,ha2, ha1)
+
+p <- Heatmap(zscore_data, 
+              name = "z-score per row",
+              show_column_names = FALSE,
+              column_title = NULL,
+              show_row_names = FALSE, 
+              cluster_rows = FALSE,
+              show_row_dend = FALSE,
+              top_annotation = ha,
+              cluster_columns = FALSE,  
+              show_column_dend = FALSE,
+              left_annotation = h_class,
+              border = TRUE)
+
+png("plots/Heatmap_TEs_HSCs_Final.png", width=16, height=12, units="in", res=300)
+grid.newpage()
+draw(p, newpage = FALSE)
+decorate_annotation("ggplot", {
+  vp = viewport(width = unit(1.02, "npc"), height = unit(1, "npc"))
+  print(anno, vp = vp)
+})
+dev.off()
+
+meta <- meta[colnames(hsc),]
+
+hsc$Group <- NULL
+hsc <- AddMetaData(hsc, meta$Group, col = "Group")
+hsc <- AddMetaData(hsc, meta$sum_level, col = "total_te")
+hsc <- AddMetaData(hsc, meta$Level, col = "TE.Level")
+
+save(hsc, file="rda/seurat_te_HSC.rda")
+save(zscore_data, file="rda/zscore_data_HSC_TEs.rda")
+
+write.csv(zscore_data, "csv/zscore_heatmap_final_HSC_TEs.csv", row.names = TRUE)
+
+rm(list=ls())
+gc()
+```
+
+## Boxplot Groups Heatmaps
+
+```{r Boxplot-final, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/zscore_data_HSC.rda")
+load("rda/seurat_te_HSC.rda")
+
+sum <- as.data.frame(t(zscore_data))
+sum$Total <- rowSums(sum)
+sum$cells <- rownames(sum)
+sum <- sum[,c(393,394)]
+sum <- sum[rownames(meta),]
+meta$cells <- rownames(meta)
+sum <- merge(sum, meta, by.x="cells",by.y="cells")
+
+color =  c(
+  "Group_1" = "#386CB0",
+  "Group_2" = "#8DB6CD",
+  "Group_3" = "#FFF8DC",
+  "Group_4" = "#FFDEAD",
+  "Group_5" = "#FFC125",
+  "Group_6" = "#D95F02")
+
+p <- ggplot(sum, aes(x = Group, y = zscore, fill = Group)) +
+  geom_boxplot(aes(fill = Group), position = position_dodge(width = 0.8), 
+               outlier.shape = 16, 
+               outlier.size = 0.65, outlier.colour = "red3") +
+  stat_boxplot(aes(Group, zscore), geom = 'errorbar', 
+               linetype = 1, width = 0.3) + 
+  stat_summary(aes(group = Group), fun = mean, geom = "point", size = 1.5, 
+               position = position_dodge(width = 0.75)) +
+  scale_fill_manual(values = color, name = NULL) +
+  scale_y_continuous(limits = c(-500, 800), breaks = seq(-500,800, by = 200)) +
+  labs(title = "Boxplot 6 Groups",
+       x = "",
+       y = "Sum of z-scores") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 10, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 10, color="black", face="bold"), 
+    axis.text.x = element_text(size = 10, face = "bold", color="black"), 
+    legend.position = "right",
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+p
+
+ggsave("plots/Boxplot_Heatmap_Groups_HSC.png", p, height=5.4, width=7.2, dpi=300)
+
+rm(list=ls())
+```
+
+## Distribution of Cells per Group (Heatmap TEs)
+
+```{r dist-groups, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/seurat_te_HSC.rda")
+
+df <- hsc@meta.data %>%
+  group_by(Group, Condition) %>%
+  summarise(count = n())
+
+count <- df %>%
+  pivot_wider(names_from = Condition, values_from = count)
+
+count <- as.data.frame(count)
+rownames(count) <- count[,1]
+count$Group <- NULL
+
+count$Total <- count$HD + count$FPD
+
+count$PHG <- count$HD*100/count$Total
+count$PHG <- round(count$PHG,1)
+count$PFG <- count$FPD*100/count$Total
+count$PFG <- round(count$PFG,1)
+
+count$PH <- count$HD*100/2030
+count$PH <- round(count$PH,1)
+count$PF <- count$FPD*100/3095
+count$PF <- round(count$PF,1)
+
+count$PG <- count$Total*100/5125
+count$PG <- round(count$PG,1)
+
+sum_row <- colSums(count)
+count <- rbind(count, sum_row)
+rownames(count)[nrow(count)] <- "Total"
+
+x <- count[,c(6,7)]
+colnames(x) <- c("HD","FPD")
+x$Group <- rownames(x)
+x <- x[-7,]
+x <- melt(x, id.vars = "Group")
+
+order <- c("Group_1","Group_2","Group_3","Group_4","Group_5","Group_6")
+x$Group <- factor(x$Group, levels = order)
+
+x <- x[order(x$Group),]
+
+order <- c("HD","FPD")
+x$variable <- factor(x$variable, levels = order)
+
+color = c(
+  "Group_1" = "#386CB0",
+  "Group_2" = "#8DB6CD",
+  "Group_3" = "#FFF8DC",
+  "Group_4" = "#FFDEAD",
+  "Group_5" = "#FFC125",
+  "Group_6" = "#D95F02")
+
+p <- ggplot(x, aes(x = variable, y = value, fill = Group)) +
+  geom_bar(width = 0.65, stat = "identity", position = "stack", 
+           color = "black", size = 0.70) +
+  scale_fill_manual(values = color, name=NULL) +
+  labs(title = "",
+       x = "",
+       y = "Percentage (%)") +
+  scale_y_continuous(labels = function(x) paste0(abs(x), "%")) +
+  theme_classic() +
+  theme(
+    axis.title.y = element_text(size = 12,
+                                color = "black",
+                                face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 10, face = "bold", color="black"), 
+    panel.grid.major = element_line(color = "white"),  
+    panel.grid.minor = element_line(color = "white"),
+    axis.text.x = element_text(size = 12, face = "bold", color = "black"),
+    legend.position = "right",
+  ) +
+  coord_flip()
+
+p
+
+ggsave("plots/Histogram_NoCells_Norm_Groups_HSC.png", p, height=5.4, width=7.2, dpi=300)
+write.csv(x, "csv/Boxplot_Heatmap_Groups_HSC.csv", row.names = FALSE)
+```
+
+# **PART 12 - Differentially Expressed Genes (DEGs)**
+
+```{r degs, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/seurats_harmony.rda")
+load("rda/seurat_te_HSC.rda")
+
+hsc <- JoinLayers(hsc)
+obj <- subset(obj, subset = cells %in% hsc@meta.data$cells)
+dim(obj)
+
+meta.obj <- obj@meta.data
+meta <- hsc@meta.data
+
+meta <- meta[match(colnames(obj), rownames(meta)), ]
+
+obj <- AddMetaData(obj, meta$TE.Level, col = "Level")
+obj <- AddMetaData(obj, meta$Group, col = "Group_Heat")
+
+obj@meta.data$Condition <- as.character(obj@meta.data$Condition)
+rm(meta,meta.obj)
+
+meta <- obj@meta.data
+
+meta$Contrast <- paste0(meta$Condition, "_", meta$Level)
+
+obj <- AddMetaData(obj, meta$Contrast, col = "Contrast")
+
+obj <- JoinLayers(obj)
+obj <- NormalizeData(object = obj)
+obj <- FindVariableFeatures(object = obj)
+obj <- ScaleData(object = obj)
+
+save(obj, file="rda/cellranger_HSC.rda")
+
+mat_raw <- as.matrix(obj@assays$RNA$counts)
+
+write.csv(mat_raw, "csv/Matrix_genes_raw_counts_HSC.csv", row.names = TRUE)
+
+meta <- obj@meta.data
+
+write.csv(meta, "csv/metadata_HSC.csv", row.names = TRUE)
+
+ensembl <- useEnsembl(biomart = "genes",
+                     dataset = "hsapiens_gene_ensembl")
+
+rm(hsc, meta)
+```
+
+## HD High vs. HD Low
+
+```{r hds, warning=FALSE, message=FALSE,eval=FALSE}
+
+Idents(obj) <- obj@meta.data$Contrast
+
+df <- FindMarkers(obj, ident.1 = "HD_High", 
+                  ident.2 = "HD_Low", assay = "RNA", test.use ="t")
+df[1] <- NULL
+df <- na.omit(df)
+colnames(df) <- c("log2FC","HD_High","HD_Low", "pval.adj")
+df$Status <- "ns"
+df[(df$pval.adj <= 0.05 & df$log2FC > 0), "Status"] <- "Upregulated in HD_High"
+df[(df$pval.adj <= 0.05 & df$log2FC < 0), "Status"] <- "Downregulated in HD_High"
+df[df$pval.adj == 0, "Status"] <- "ns"
+table(df$Status)
+
+df$Status <- factor(df$Status, levels =c("Upregulated in HD_High", 
+                                         "Downregulated in HD_High", 
+                                         "ns"))
+
+label <- df[(df$Status != "ns"), ]
+label$Gene <- rownames(label)
+
+a <- label[label$Status == "Downregulated in HD_High",]
+a <- a %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+
+b <- label[label$Status == "Upregulated in HD_High",]
+b <- b %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+c <- rbind(a,b)
+
+p <- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+  geom_point(size = 1.5) +
+  geom_point() +
+  scale_color_manual(values = c("darkred","blue3","gray70"), name = NULL) +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  geom_vline(xintercept = log2(1),
+             linetype = "dashed") +
+  theme_bw() +
+  labs(title = "", x = "log2(Fold Change)", y = "-log10(FDR)") +
+  theme(
+    strip.text = element_text(size = 10.5, face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray97"),
+    panel.grid.minor = element_line(color = "gray97")) +
+    geom_label_repel(data = c,
+                   aes(label = Gene),
+                   size = 2.1,
+                   box.padding = 0.5,
+                   force = 2,
+                   nudge_y = 0.65,
+                   max.overlaps = 100,
+                   fontface ="bold",
+                   show.legend = FALSE)
+
+ggsave("plots/Volcano_DEGs.HSC_HD_High_Low.png", p, height=5.4, width=7.2, dpi=300)
+
+write.csv(df, "csv/DEGs_HSC_HD_High_Low.csv", row.names = TRUE)
+
+# Biological Pathways
+degs <- df[df$Status != "ns",]
+
+## Up
+up <- degs[degs$Status == "Upregulated in HD_High",]
+genes <- rownames(up)
+
+data = useDataset("hsapiens_gene_ensembl", mart=ensembl)
+x <- listFilters(data)
+
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+
+## Down
+down <- degs[degs$Status == "Downregulated in HD_High",]
+genes <- rownames(down)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+
+save(up, down, file="rda/HD_BP.rda")
+
+rm(list=ls())
+```
+
+## FPD High vs. FPD Low
+
+```{r fpds, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/cellranger_HSC.rda")
+
+Idents(obj) <- obj@meta.data$Contrast
+
+df <- FindMarkers(obj, ident.1 = "FPD_High", 
+                  ident.2 = "FPD_Low", assay = "RNA", test.use ="t")
+df[1] <- NULL
+df <- na.omit(df)
+colnames(df) <- c("log2FC","FPD_High","FPD_Low", "pval.adj")
+df$Status <- "ns"
+df[(df$pval.adj <= 0.05 & df$log2FC > 0), "Status"] <- "Upregulated in FPD_High"
+df[(df$pval.adj <= 0.05 & df$log2FC < 0), "Status"] <- "Downregulated in FPD_High"
+df[df$pval.adj == 0, "Status"] <- "ns"
+table(df$Status)
+
+df$Status <- factor(df$Status, levels =c("Upregulated in FPD_High", 
+                                         "Downregulated in FPD_High", 
+                                         "ns"))
+
+label <- df[(df$Status != "ns"), ]
+label$Gene <- rownames(label)
+
+a <- label[label$Status == "Upregulated in FPD_High",]
+a <- a %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+b <- label[label$Status == "Downregulated in FPD_High",]
+b <- b %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+c <- rbind(a,b)
+
+p <- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+  geom_point(size = 1.5) +
+  geom_point() +
+  scale_color_manual(values = c("darkred","blue3","gray70"), name = NULL) +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  geom_vline(xintercept = log2(1),
+             linetype = "dashed") +
+  theme_bw() +
+  labs(title = "", x = "log2(Fold Change)", y = "-log10(FDR)") +
+  theme(
+    strip.text = element_text(size = 10.5, face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray97"),
+    panel.grid.minor = element_line(color = "gray97")) +
+    geom_label_repel(data = c,
+                   aes(label = Gene),
+                   size = 2.1,
+                   box.padding = 0.5,
+                   force = 2,
+                   nudge_y = 0.65,
+                   max.overlaps = 100,
+                   fontface ="bold",
+                   show.legend = FALSE)
+
+ggsave("plots/Volcano_DEGs.HSC_FPD_High_Low.png", p, height=5.4, width=7.2, dpi=300)
+
+write.csv(df, "csv/DEGs_HSC_FPD_High_Low.csv", row.names = TRUE)
+
+# Biological Pathways
+degs <- df[df$Status != "ns",]
+
+## Up
+up <- degs[degs$Status == "Upregulated in FPD_High",]
+genes <- rownames(up)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+
+## Down
+down <- degs[degs$Status == "Downregulated in FPD_High",]
+genes <- rownames(down)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+
+save(up, down, file="rda/FPD_BP.rda")
+
+rm(list=ls())
+```
+
+## FPD High vs. HD High
+
+```{r highs, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/cellranger_HSC.rda")
+
+Idents(obj) <- obj@meta.data$Contrast
+
+df <- FindMarkers(obj, ident.1 = "FPD_High", 
+                  ident.2 = "HD_High", assay = "RNA", test.use ="t")
+df[1] <- NULL
+df <- na.omit(df)
+colnames(df) <- c("log2FC","FPD_High","HD_High", "pval.adj")
+df$Status <- "ns"
+df[(df$pval.adj <= 0.05 & df$log2FC > 0), "Status"] <- "Upregulated in FPD_High"
+df[(df$pval.adj <= 0.05 & df$log2FC < 0), "Status"] <- "Downregulated in FPD_High"
+df[df$pval.adj == 0, "Status"] <- "ns"
+table(df$Status)
+
+df$Status <- factor(df$Status, levels =c("Upregulated in FPD_High", 
+                                         "Downregulated in FPD_High", 
+                                         "ns"))
+
+label <- df[(df$Status != "ns"), ]
+label$Gene <- rownames(label)
+
+a <- label[label$Status == "Upregulated in FPD_High",]
+a <- a %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+b <- label[label$Status == "Downregulated in FPD_High",]
+b <- b %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+c <- rbind(a,b)
+
+p <- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+  geom_point(size = 1.5) +
+  geom_point() +
+  scale_color_manual(values = c("darkred","blue3","gray70"), name = NULL) +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  geom_vline(xintercept = log2(1),
+             linetype = "dashed") +
+  theme_bw() +
+  labs(title = "", x = "log2(Fold Change)", y = "-log10(FDR)") +
+  theme(
+    strip.text = element_text(size = 10.5, face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray97"),
+    panel.grid.minor = element_line(color = "gray97")) +
+    geom_label_repel(data = c,
+                   aes(label = Gene),
+                   size = 2.1,
+                   box.padding = 0.5,
+                   force = 2,
+                   nudge_y = 0.65,
+                   max.overlaps = 100,
+                   fontface ="bold",
+                   show.legend = FALSE)
+
+ggsave("plots/Volcano_DEGs.HSC_FPD_High_HD_High.png", p, height=5.4, width=7.2, dpi=300)
+
+write.csv(df, "csv/DEGs_HSC_FPD_High_HD_High.csv", row.names = TRUE)
+
+# Biological Pathways
+degs <- df[df$Status != "ns",]
+
+## Up
+up <- degs[degs$Status == "Upregulated in FPD_High",]
+genes <- rownames(up)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+
+## Down
+down <- degs[degs$Status == "Downregulated in FPD_High",]
+genes <- rownames(down)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+
+save(up, down, file="rda/High_BP.rda")
+
+rm(list=ls())
+```
+
+## FPD Low vs. HD Low
+
+```{r lows, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/cellranger_HSC.rda")
+
+Idents(obj) <- obj@meta.data$Contrast
+
+df <- FindMarkers(obj, ident.1 = "FPD_Low", 
+                  ident.2 = "HD_Low", assay = "RNA", test.use ="t")
+df[1] <- NULL
+df <- na.omit(df)
+colnames(df) <- c("log2FC","FPD_Low","HD_Low", "pval.adj")
+df$Status <- "ns"
+df[(df$pval.adj <= 0.05 & df$log2FC > 0), "Status"] <- "Upregulated in FPD_Low"
+df[(df$pval.adj <= 0.05 & df$log2FC < 0), "Status"] <- "Downregulated in FPD_Low"
+df[df$pval.adj == 0, "Status"] <- "ns"
+table(df$Status)
+
+df$Status <- factor(df$Status, levels =c("Upregulated in FPD_Low", 
+                                         "Downregulated in FPD_Low", 
+                                         "ns"))
+
+label <- df[(df$Status != "ns"), ]
+label$Gene <- rownames(label)
+
+a <- label[label$Status == "Upregulated in FPD_Low",]
+a <- a %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+b <- label[label$Status == "Downregulated in FPD_Low",]
+b <- b %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 20)
+
+c <- rbind(a,b)
+
+p <- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+  geom_point(size = 1.5) +
+  geom_point() +
+  scale_color_manual(values = c("darkred","blue3","gray70"), name = NULL) +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  geom_vline(xintercept = log2(1),
+             linetype = "dashed") +
+  theme_bw() +
+  labs(title = "", x = "log2(Fold Change)", y = "-log10(FDR)") +
+  theme(
+    strip.text = element_text(size = 10.5, face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray97"),
+    panel.grid.minor = element_line(color = "gray97")) +
+    geom_label_repel(data = c,
+                   aes(label = Gene),
+                   size = 2.1,
+                   box.padding = 0.5,
+                   force = 2,
+                   nudge_y = 0.65,
+                   max.overlaps = 100,
+                   fontface ="bold",
+                   show.legend = FALSE)
+
+ggsave("plots/Volcano_DEGs.HSC_FPD_Low_HD_Low.png", p, height=5.4, width=7.2, dpi=300)
+
+write.csv(df, "csv/DEGs_HSC_FPD_Low_HD_Low.csv", row.names = TRUE)
+
+# Biological Pathways
+degs <- df[df$Status != "ns",]
+
+## Up
+up <- degs[degs$Status == "Upregulated in FPD_Low",]
+genes <- rownames(up)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+
+## Down
+down <- degs[degs$Status == "Downregulated in FPD_Low",]
+genes <- rownames(down)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+
+save(up, down, file="rda/Low_BP.rda")
+
+rm(list=ls())
+```
+
+## FPD vs. HD
+
+```{r fpd-hd, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/cellranger_HSC.rda")
+
+Idents(obj) <- obj@meta.data$Condition
+
+df <- FindMarkers(obj, ident.1 = "FPD", 
+                  ident.2 = "HD", assay = "RNA", test.use ="t")
+
+df[1] <- NULL
+df <- na.omit(df)
+colnames(df) <- c("log2FC","FPD","HD", "pval.adj")
+df$Status <- "ns"
+df[(df$pval.adj <= 0.05 & df$log2FC > 0), "Status"] <- "Upregulated in FPD"
+df[(df$pval.adj <= 0.05 & df$log2FC < 0), "Status"] <- "Downregulated in FPD"
+df[df$pval.adj == 0, "Status"] <- "ns"
+table(df$Status)
+
+df$Status <- factor(df$Status, levels =c("Upregulated in FPD", 
+                                         "Downregulated in FPD", 
+                                         "ns"))
+
+label <- df[(df$Status != "ns"), ]
+label$Gene <- rownames(label)
+
+a <- label[label$Status == "Upregulated in FPD",]
+a <- a %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 60)
+
+b <- label[label$Status == "Downregulated in FPD",]
+b <- b %>%
+  arrange(pval.adj) %>%  
+  slice_head(n = 60)
+
+c <- rbind(a,b)
+
+p <- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+  geom_point(size = 1.5) +
+  geom_point() +
+  scale_color_manual(values = c("darkred","blue3","gray70"), name = NULL) +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  geom_vline(xintercept = log2(1),
+             linetype = "dashed") +
+  theme_bw() +
+  labs(title = "", x = "log2(Fold Change)", y = "-log10(FDR)") +
+  theme(
+    strip.text = element_text(size = 10.5, face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray97"),
+    panel.grid.minor = element_line(color = "gray97")) +
+    geom_label_repel(data = c,
+                   aes(label = Gene),
+                   size = 2.1,
+                   box.padding = 0.5,
+                   force = 2,
+                   nudge_y = 0.65,
+                   max.overlaps = 100,
+                   fontface ="bold",
+                   show.legend = FALSE)
+
+ggsave("plots/Volcano_DEGs.HSC_FPD_HD.png", p, height=5.4, width=7.2, dpi=300)
+
+write.csv(df, "csv/DEGs_HSC_FPD_HD.csv", row.names = TRUE)
+
+save(df, file="rda/all.deg.rda")
+
+# Biological Pathways
+degs <- df[df$Status != "ns",]
+
+## Up
+up <- degs[degs$Status == "Upregulated in FPD",]
+genes <- rownames(up)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+
+## Down
+down <- degs[degs$Status == "Downregulated in FPD",]
+genes <- rownames(down)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+
+save(up, down, file="rda/all_BP.rda")
+
+rm(list=ls())
+```
+
+# **PART 13 - Pathway Enrichment Analysis**
+
+```{r run-enrichment, warning=FALSE, message=FALSE,eval=FALSE}
+
+# HD
+load("rda/HD_BP.rda")
+
+## Up
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+## Down
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+rm(list=ls())
+
+# FPD
+load("rda/FPD_BP.rda")
+
+## Up
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+## Down
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+# High TE Expression
+
+load("rda/High_BP.rda")
+
+## Up
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+## Down
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+# Low TE Expression
+load("rda/Low_BP.rda")
+
+## Up
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+dotplot(enrichres, showCategory = 1)
+
+## Down
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+# FPD vs. HD
+load("rda/all_BP.rda")
+
+## Up
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+
+## Down
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+treeplot(a)
+```
+
+## Organizing Biological Pathways
+
+```{r org-bps, warning=FALSE, message=FALSE,eval=FALSE}
+# HD
+hd <- read.csv("csv/DEGs_HSC_HD_High_Low.csv", row.names=1)
+
+hd <- hd %>%
+  dplyr::filter(Status != "ns") %>%
+  dplyr::select(1, 4, 5) %>%
+  rownames_to_column("Genes")
+
+# FPD
+fpd <- read.csv("csv/DEGs_HSC_FPD_High_Low.csv", row.names=1)
+
+fpd <- fpd %>%
+  dplyr::filter(Status != "ns") %>%
+  dplyr::select(1, 4, 5) %>%
+  rownames_to_column("Genes")
+
+# High
+high <- read.csv("csv/DEGs_HSC_FPD_High_HD_High.csv", row.names=1)
+
+high <- high %>%
+  dplyr::filter(Status != "ns") %>%
+  dplyr::select(1, 4, 5) %>%
+  rownames_to_column("Genes")
+
+# Low
+low <- read.csv("csv/DEGs_HSC_FPD_Low_HD_Low.csv", row.names=1)
+
+low <- low %>%
+  dplyr::filter(Status != "ns") %>%
+  dplyr::select(1, 4, 5) %>%
+  rownames_to_column("Genes")
+
+# Getting UNIQUE Features (Note that is no HD Low in these files)
+
+## HD vs FPD
+hd_unique <- anti_join(hd, fpd, by = "Genes")
+fpd_unique <- anti_join(fpd, hd, by = "Genes")
+
+## High vs Low
+high_unique <- anti_join(high, low, by = "Genes")
+low_unique <- anti_join(low, high, by = "Genes")
+
+## HD vs High
+a <- anti_join(hd, high, by = "Genes")
+b <- anti_join(high, hd, by = "Genes")
+
+## HD vs Low
+c <- anti_join(hd, low, by = "Genes")
+d <- anti_join(low, hd, by = "Genes")
+
+## FPD vs High
+e <- anti_join(fpd, high, by = "Genes")
+f <- anti_join(high, fpd, by = "Genes")
+
+## FPD vs Low
+g <- anti_join(fpd, low, by = "Genes")
+h <- anti_join(low, fpd, by = "Genes")
+
+rm(hd,fpd,high,low)
+
+## Only HD High
+hd <- rbind(hd_unique, a,c)
+hd <- hd[!duplicated(hd$Genes),]
+hd_up <- hd[hd$Status == "Upregulated in HD_High",]
+hd_down <- hd[hd$Status == "Downregulated in HD_High",]
+rm(hd_unique,a,c, hd)
+
+## Only FPD High
+fpd <- rbind(fpd_unique, high_unique, b,e,f,g)
+fpd <- fpd[!duplicated(fpd$Genes),]
+fpd_up <- fpd[fpd$Status == "Upregulated in FPD_High",]
+fpd_down <- fpd[fpd$Status == "Downregulated in FPD_High",]
+rm(fpd,fpd_unique, high_unique, b,e,f,g)
+
+## Only FPD Low
+low <- rbind(low_unique, h,d)
+low <- low[!duplicated(low$Genes),]
+low_up <- low[low$Status == "Upregulated in FPD_Low",]
+low_down <- low[low$Status == "Downregulated in FPD_Low",]
+rm(low,low_unique, h,d)
+
+# Saving
+write.csv(hd_up, "csv/DEGs_HSC_unique_HD_High_Upregulated.csv", row.names = FALSE)
+write.csv(hd_down, "csv/DEGs_HSC_unique_HD_High_Downregulated.csv", row.names = FALSE)
+write.csv(fpd_up, "csv/DEGs_HSC_unique_FPD_High_Upregulated.csv", row.names = FALSE)
+write.csv(fpd_down, "csv/DEGs_HSC_unique_FPD_High_Downregulated.csv", row.names = FALSE)
+write.csv(low_up, "csv/DEGs_HSC_unique_FPD_Low_Upregulated.csv", row.names = FALSE)
+write.csv(low_down, "csv/DEGs_HSC_unique_FPD_Low_Downregulated.csv", row.names = FALSE)
+
+# Plotting
+
+## HD
+
+### Up
+genes <- hd_up$Genes
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+p <- treeplot(a)
+
+ggsave("plots/DEGs_BPs_HSC_unique_HD_High_Upregulated.png", p, height=8, width=9, dpi=300)
+
+df <- a@result
+
+write.csv(df, "csv/DEGs_BPs_HSC_unique_HD_High_Upregulated.csv", row.names = FALSE)
+
+### Down
+genes <- hd_down$Genes
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+p <- treeplot(a)
+
+ggsave("plots/DEGs_BPs_HSC_unique_HD_High_Downregulated.png", p, height=8, width=9, dpi=300)
+
+df <- a@result
+
+write.csv(df, "csv/DEGs_BPs_HSC_unique_HD_High_Downregulated.csv", row.names = FALSE)
+
+## FPD High TE Expression
+
+### Up
+genes <- fpd_up$Genes
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+p <- treeplot(a)
+
+ggsave("plots/DEGs_BPs_HSC_unique_FPD_High_Upregulated.png", p, height=8, width=9, dpi=300)
+
+df <- a@result
+
+write.csv(df, "csv/DEGs_BPs_HSC_unique_FPD_High_Upregulated.csv", row.names = FALSE)
+
+### Down
+genes <- fpd_down$Genes
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+p <- treeplot(a)
+
+ggsave("plots/DEGs_BPs_HSC_unique_FPD_High_Downregulated.png", p, height=8, width=9, dpi=300)
+
+df <- a@result
+
+write.csv(df, "csv/DEGs_BPs_HSC_unique_FPD_High_Downregulated.csv", row.names = FALSE)
+
+## FPD Low TE Expression
+
+### Up
+genes <- low_up$Genes
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres) # DO NOT HAVE ENOUGH FEATURES
+
+### Down
+genes <- low_down$Genes
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+p <- treeplot(a)
+
+ggsave("plots/DEGs_BPs_HSC_unique_FPD_Low_Downregulated.png", p, height=8, width=9, dpi=300)
+
+df <- a@result
+
+write.csv(df, "csv/DEGs_BPs_HSC_unique_FPD_Low_Downregulated.csv", row.names = FALSE)
+
+rm(list=ls())
+```
+
+# **PART 14 - Comparing Group 1 (Low TE Expression) vs. Group 6 (High TE Expression)**
+
+```{r group1vsgroup6, warning=FALSE, message=FALSE,eval=FALSE}
+load("rda/seurat_te_HSC.rda")
+groups <- subset(hsc, subset = Group %in% c("Group_1", "Group_6"))
+rm(hsc)
+
+load("rda/cellranger_HSC.rda")
+hsc <- subset(obj, subset = cells %in% colnames(groups))
+
+Idents(hsc) <- hsc@meta.data$Group
+
+df <- FindMarkers(hsc, ident.1 = "Group_6", ident.2 = "Group_1", assay = "RNA", test.use = "t")
+
+df[1] <- NULL
+colnames(df) <- c("log2FC","Group_6","Group_1", "pval.adj")
+df$Status <- "ns"
+df[(df$pval.adj <= 0.05 & df$log2FC > 0), "Status"] <- "Upregulated in Group_6"
+df[(df$pval.adj <= 0.05 & df$log2FC < 0), "Status"] <- "Upregulated in Group_1"
+df[df$pval.adj == 0, "Status"] <- "ns"
+table(df$Status)
+
+df$Status <- factor(df$Status, levels =c("Upregulated in Group_6", 
+                                         "Upregulated in Group_1", 
+                                         "ns"))
+
+label <- df[(df$Status != "ns"), ]
+label$Gene <- rownames(label)
+
+a <- label[label$Status == "Upregulated in Group_6",]
+b <- label[label$Status == "Upregulated in Group_1",]
+
+a <- a %>%
+  arrange(pval.adj)  %>%  
+  slice_head(n = 200)
+
+a <- a %>%
+  arrange(desc(log2FC))  %>%  
+  slice_head(n = 25)
+
+b <- b %>%
+  arrange(pval.adj)  %>%  
+  slice_head(n = 200)
+
+b <- b %>%
+  arrange(desc(log2FC))  %>%  
+  slice_head(n = 25)
+
+c <- rbind(a,b)
+
+p <- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+  geom_point(size = 1.5) +
+  geom_point() +
+  scale_color_manual(values = c("darkred","blue3","gray70"), name = NULL) +
+  geom_hline(yintercept = -log10(0.05),
+             linetype = "dashed") +
+  geom_vline(xintercept = log2(1),
+             linetype = "dashed") +
+  theme_bw() +
+  labs(title = "", x = "log2(Fold Change)", y = "-log10(FDR)") +
+  theme(
+    strip.text = element_text(size = 10.5, face = "bold"),
+    legend.position = "right",
+    panel.grid.major = element_line(color = "gray97"),
+    panel.grid.minor = element_line(color = "gray97")) +
+    geom_label_repel(data = c,
+                   aes(label = Gene),
+                   size = 1.8,
+                   box.padding = 0.5,
+                   force = 2,
+                   nudge_y = 0.65,
+                   max.overlaps = 100,
+                   fontface ="bold",
+                   show.legend = FALSE)
+
+ggsave("plots/Volcano_DEGs.HSC_Group6_Group_1.png", p, height=5.4, width=7.2, dpi=300)
+
+write.csv(df, "csv/DEGs_HSC_Group6_Group_1.csv", row.names = TRUE)
+
+# Biological Pathways
+degs <- df[df$Status != "ns",]
+
+## Up Group_6
+up <- degs[degs$Status == "Upregulated in Group_6",]
+genes <- rownames(up)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+up <- as.data.frame(go)
+up$ID <- NULL
+up$ID <- make.names(up$Description)
+rownames(up) <- up$ID
+
+geneList <- strsplit(up$geneID, "/")
+names(geneList) <- rownames(up)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = up,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(up$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(up$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+p <- treeplot(a)
+
+ggsave("plots/DEGs_BPs_HSC_Group_6_Upregulated.png", p, height=8, width=9, dpi=300)
+
+df <- a@result
+
+write.csv(df, "csv/DEGs_BPs_HSC_Group_6_Upregulated.csv", row.names = TRUE)
+
+## Up Group_1
+down <- degs[degs$Status == "Upregulated in Group_1",]
+genes <- rownames(down)
+go <- enrichGO(gene = genes,
+               OrgDb = "org.Hs.eg.db", 
+               keyType = "SYMBOL", 
+               ont = "BP")
+
+down <- as.data.frame(go)
+down$ID <- NULL
+down$ID <- make.names(down$Description)
+rownames(down) <- down$ID
+
+geneList <- strsplit(down$geneID, "/")
+names(geneList) <- rownames(down)
+
+enrichres <- new("enrichResult",
+                 readable = FALSE,
+                 result = down,
+                 pvalueCutoff = 0.05,
+                 pAdjustMethod = "BH",
+                 qvalueCutoff = 0.2,
+                 organism = "human",
+                 ontology = "UNKNOWN",
+                 gene = unique(down$geneID),
+                 keytype = "UNKNOWN",
+                 universe = unique(down$geneID),
+                 gene2Symbol = character(0),
+                 geneSets = geneList)
+
+a <- pairwise_termsim(enrichres)
+
+p <- treeplot(a)
+
+ggsave("plots/DEGs_BPs_HSC_Group_1_Upregulated.png", p, height=8, width=9, dpi=300)
+
+df <- a@result
+
+write.csv(df, "csv/DEGs_BPs_HSC_Group_1_Upregulated.csv", row.names = TRUE)
+
+rm(list=ls())
+```
+
+# **PART 15 - Session Information**
+
+```{r Session-Info, warning=FALSE}
+sessionInfo()
+R.version
+```
