@@ -4081,7 +4081,362 @@ write.csv(df, "csv/DEGs_BPs_HSC_Group_1_Upregulated.csv", row.names = TRUE)
 rm(list=ls())
 ```
 
-# **PART 15 - Session Information**
+# **PART 15 - BH4 Synthesis**
+
+```{r bh4, warning=FALSE, eval=FALSE}
+load("rda/seurat_te_types.rda")
+load("rda/seurats_harmony.rda")
+
+keep <- seurat_te@meta.data$cells
+
+obj <- JoinLayers(obj, assay = "RNA")
+obj <- subset(obj, subset=cells %in% keep)
+
+meta <- obj@meta.data
+metate <- seurat_te@meta.data
+meta <- meta[rownames(metate),]
+
+meta[meta$cells %in% metate$cells, "Type"] <- metate$Type[metate$cells %in% meta$cells]
+
+obj <- AddMetaData(obj, meta$Type, col.name = "Type")
+
+mat <- as.matrix(obj@assays$RNA$scale.data)
+
+if ("DHFR" %in% rownames(mat)) {
+  cat("Gene found\n")
+}
+
+targets <- c("GCH1","PTS","SPR","QDPR","DHFR")
+
+meta$Condition <- factor(meta$Condition, levels = c("HD","FPD"))
+meta <- meta[order(meta$Condition),]
+mat <- mat[,meta$cells]
+
+# GCH1
+gch1 <- "GCH1"
+
+df <- data.frame(
+  expr = as.numeric(mat[gch1, ]),
+  celltype = meta[colnames(mat), "Type"],
+  condition = meta[colnames(mat), "Condition"]
+)
+
+p <- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = "gray92") 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = "black"
+  ) +
+  scale_fill_manual(values = "gray92", name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = 'errorbar', linetype = 1, width = 0.3) + 
+  labs(title = "GCH1",
+       x = "",
+       y = "Expression (zscore)") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color="black"), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = "bold", color="black", angle = 45), 
+    legend.position = "none",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/Boxplot_GCH1.png", p, height=7.5, width=11, dpi=300)
+
+write.csv(df, "csv/Boxplot_GCH1.csv", row.names = FALSE)
+
+# PTS
+pts <- "PTS"
+
+df <- data.frame(
+  expr = as.numeric(mat[pts, ]),
+  celltype = meta[colnames(mat), "Type"],
+  condition = meta[colnames(mat), "Condition"]
+)
+
+p <- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = "gray92") 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = "black"
+  ) +
+  scale_fill_manual(values = "gray92", name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = 'errorbar', linetype = 1, width = 0.3) + 
+  labs(title = "PTS",
+       x = "",
+       y = "Expression (zscore)") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color="black"), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = "bold", color="black", angle = 45), 
+    legend.position = "none",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/Boxplot_PTS.png", p, height=7.5, width=11, dpi=300)
+
+write.csv(df, "csv/Boxplot_PTS.csv", row.names = FALSE)
+
+# SPR
+spr <- "SPR"
+
+df <- data.frame(
+  expr = as.numeric(mat[spr, ]),
+  celltype = meta[colnames(mat), "Type"],
+  condition = meta[colnames(mat), "Condition"]
+)
+
+p <- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = "gray92") 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = "black"
+  ) +
+  scale_fill_manual(values = "gray92", name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = 'errorbar', linetype = 1, width = 0.3) + 
+  labs(title = "SPR",
+       x = "",
+       y = "Expression (zscore)") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color="black"), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = "bold", color="black", angle = 45), 
+    legend.position = "none",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/Boxplot_SPR.png", p, height=7.5, width=11, dpi=300)
+
+write.csv(df, "csv/Boxplot_SPR.csv", row.names = FALSE)
+
+# QDPR
+qdpr <- "QDPR"
+
+df <- data.frame(
+  expr = as.numeric(mat[qdpr, ]),
+  celltype = meta[colnames(mat), "Type"],
+  condition = meta[colnames(mat), "Condition"]
+)
+
+p <- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = "gray92") 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = "black"
+  ) +
+  scale_fill_manual(values = "gray92", name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = 'errorbar', linetype = 1, width = 0.3) + 
+  labs(title = "QDPR",
+       x = "",
+       y = "Expression (zscore)") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color="black"), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = "bold", color="black", angle = 45), 
+    legend.position = "none",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/Boxplot_QDPR.png", p, height=7.5, width=11, dpi=300)
+
+write.csv(df, "csv/Boxplot_QDPR.csv", row.names = FALSE)
+
+# DHFR
+dhfr <- "DHFR"
+
+df <- data.frame(
+  expr = as.numeric(mat[dhfr, ]),
+  celltype = meta[colnames(mat), "Type"],
+  condition = meta[colnames(mat), "Condition"]
+)
+
+p <- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = "gray92") 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = "black"
+  ) +
+  scale_fill_manual(values = "gray92", name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = 'errorbar', linetype = 1, width = 0.3) + 
+  labs(title = "DHFR",
+       x = "",
+       y = "Expression (zscore)") +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = "black", face = "bold"),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color="black"), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = "bold", color="black", angle = 45), 
+    legend.position = "none",
+    strip.text = element_text(size = 10.5, face = "bold"),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = "white"),
+    panel.grid.minor = element_line(color = "white")
+  )
+
+ggsave("plots/Boxplot_DHFR.png", p, height=7.5, width=11, dpi=300)
+
+write.csv(df, "csv/Boxplot_DHFR.csv", row.names = FALSE)
+```
+
+# **PART 16 - Reactive Chemical Species, Genome Integrity and Cellular Defense**
+
+```{r reactive, warning=FALSE, eval=FALSE}
+genes_RCS <- unique(c(
+  "NOX1","CYBB","NOX3","NOX4","NOX5","DUOX1","DUOX2","CYBA","NCF1","NCF2","NCF4","NOXO1",
+  "NOXA1","RAC1","RAC2","DUOXA1","DUOXA2","NOS1","NOS2","NOS3","GCH1","PTS","SPR","QDPR",
+  "DHFR","PCBD1","ARG1","ARG2","ASS1","ASL","DDAH1","DDAH2","CYP1A1","CYP1B1","CYP2E1","CYP3A4",
+  "EPHX1","NQO1","GSTA1","GSTA4","GSTP1","UGT1A1","ERO1A","ERO1B","P4HB","QSOX1","ACOX1","DAO",
+  "HAO1","HAO2","CAT","NDUFS1","NDUFS2","NDUFV1","UQCRC1","UQCRC2","UQCRFS1","CYCS","COX4I1",
+  "SOD2","PRDX3","TXN2","TXNRD2","MAOA","MAOB","DHODH","ACSL4","LPCAT3","ALOX5","ALOX12","ALOX15",
+  "PTGS2","GPX4","SLC7A11","SLC3A2","AIFM2","FTH1","FTL","NCOA4","HMOX1","TFRC","ALDH2","ALDH1A1",
+  "ALDH3A1","AKR1B1","AKR1C1","AKR1C2","AKR1C3","GSTM1","MGST1","GLO1","GLO2","SOD1","SOD3","GPX1",
+  "GPX2","GPX3","PRDX1","PRDX2","PRDX4","PRDX5","PRDX6","SRXN1","TXN","TXNRD1","GCLC","GCLM","GSS",
+  "GSR","G6PD","PGD","TKT","TALDO1","ME1","ME2","IDH1","IDH2","NNT","FTMT","HMOX2","SLC40A1","SLC11A2",
+  "STEAP3","ACO1","IREB2","KDM1A","KDM1B","KDM4A","KDM5B","KDM6A","TET1","TET2","TET3","APOBEC3A",
+  "APOBEC3B","AICDA","TOP1","TOP2A","TOP2B","SMOX","PAOX","OGG1","MUTYH","NTHL1","NEIL1","NEIL2","NEIL3",
+  "UNG","APEX1","POLB","XRCC1","PARP1","PARP2","ATM","ATR","CHEK1","CHEK2","TP53","CDKN1A","CGAS","STING1",
+  "TBK1","IRF1","IRF3","IRF7","IRF9","IFNAR1","IFNAR2","JAK1","TYK2","STAT1","STAT2","ISG15","IFIT1","CXCL10",
+  "TLR2","TLR4","MYD88","TRAF6","NFKB1","NFKBIA","RELA","TNF","IL1B","IL6","RNASEH1","RNASEH2A","RNASEH2B",
+  "RNASEH2C","SETX","RPA1","RPA2","RB1","E2F1","E2F2","CCNE1","MCM2","MCM3","MCM4","MCM5","MCM6","MCM7","PCNA",
+  "NFE2L2","KEAP1","MRC1","IL10","TGFB1","MERTK","AXL","GAS6","CD163","MARCO","PRF1","GZMB","GZMA","GNLY","NKG7",
+  "IFNG","FASLG","TNFSF10","CTSW"))
+
+genes_DNArepair <- unique(c(
+  "OGG1","MUTYH","NTHL1","NEIL1","NEIL2","NEIL3","UNG","SMUG1","TDG","MBD4","APEX1","POLB","XRCC1","LIG3",
+  "PARP1","PARP2","PARG","APTX","TDP1","BRCA1","BRCA2","PALB2","RAD51","RAD52","RAD54L","BARD1","FANCD2",
+  "FANCI","BRIP1","XRCC5","XRCC6","PRKDC","LIG4","XRCC4","NHEJ1","TP53BP1","DCLRE1C","MSH2","MSH3","MSH6",
+  "MLH1","PMS2","PMS1","EXO1","XPA","XPC","ERCC1","ERCC2","ERCC3","ERCC4","ERCC5","DDB1","DDB2","FANCA",
+  "FANCB","FANCC","FANCE","FANCF","FANCG","FANCL","ATM","ATR","CHEK1","CHEK2","TP53","CDKN1A","MDM2","H2AFX",
+  "RPA1","RPA2","RPA3","CLSPN","TOPBP1","CDC45","MCM2","MCM7","APOBEC3A","APOBEC3B","AICDA","REV1","POLH",
+  "TERT","TERF1","TERF2","POT1","TINF2","ACD","RTEL1","POLG","TFAM","TWNK","SSBP1","MGME1"))
+
+Idents(obj) <- obj@meta.data$Condition
+
+# DEGs per Cell Type
+types <- unique(obj@meta.data$Type)
+
+for (type in types) {
+  
+  cat("Processing:", type, "\n")
+  
+  # subset object by cell type
+  sub_obj <- subset(obj, subset = Type == type)
+  
+  # set identity to condition (HD vs FPD)
+  Idents(sub_obj) <- sub_obj@meta.data$Condition
+  
+  # skip if not both groups present
+  if (!all(c("HD","FPD") %in% unique(Idents(sub_obj)))) {
+    cat("Skipping (missing condition):", type, "\n")
+    next
+  }
+  
+  # run DEG
+  df <- FindMarkers(sub_obj, ident.1 = "HD", ident.2 = "FPD",
+                    assay = "RNA", test.use = "t")
+  
+  if (nrow(df) == 0) next
+  
+  df <- na.omit(df)
+  
+  # clean + rename
+  colnames(df) <- c("pval","log2FC","pct_HD","pct_FPD","pval.adj")
+  df$Gene <- rownames(df)
+  
+  # classification
+  df$Status <- "ns"
+  df[df$pval.adj <= 0.05 & df$log2FC > 0, "Status"] <- "Up in HD"
+  df[df$pval.adj <= 0.05 & df$log2FC < 0, "Status"] <- "Up in FPD"
+  
+  df$Status <- factor(df$Status, levels = c("Up in HD","Up in FPD","ns"))
+  
+  # select top genes for labeling
+  label <- df[df$Status != "ns", ]
+  
+  top_up <- label %>% 
+    dplyr::filter(Status == "Up in HD") %>% 
+    arrange(pval.adj) %>% 
+    slice_head(n = 20)
+  
+  top_down <- label %>% 
+    dplyr::filter(Status == "Up in FPD") %>% 
+    arrange(pval.adj) %>% 
+    slice_head(n = 20)
+  
+  lab_genes <- rbind(top_up, top_down)
+  
+  # volcano plot
+  p <- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+    geom_point(size = 2) +
+    scale_color_manual(values = c("darkred","blue","gray70")) +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+    geom_vline(xintercept = 0, linetype = "dashed") +
+    theme_bw() +
+    labs(title = paste0("Volcano: ", type),
+         x = "log2(Fold Change)",
+         y = "-log10(FDR)") +
+    geom_label_repel(data = lab_genes,
+                     aes(label = Gene),
+                     size = 3,
+                     max.overlaps = 100,
+                     show.legend = FALSE)
+  
+  # save outputs
+  ggsave(paste0("plots/Volcano_", gsub(" ", "_", type), ".png"),
+         p, height = 6, width = 9, dpi = 300)
+  
+  write.csv(df,
+            paste0("csv/DEG_", gsub(" ", "_", type), ".csv"),
+            row.names = FALSE)
+}
+```
+
+# **PART 17 - Session Information**
 
 ```{r Session-Info, warning=FALSE}
 sessionInfo()
