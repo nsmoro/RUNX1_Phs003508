@@ -449,7 +449,11 @@ Pathways</a></li>
 </ul></li>
 <li><a href="#part-14---comparing-group-1-low-te-expression-vs.-group-6-high-te-expression" id="toc-part-14---comparing-group-1-low-te-expression-vs.-group-6-high-te-expression"><span class="toc-section-number">14</span> <strong>PART 14 - Comparing Group 1
 (Low TE Expression) vs. Group 6 (High TE Expression)</strong></a></li>
-<li><a href="#part-15---session-information" id="toc-part-15---session-information"><span class="toc-section-number">15</span> <strong>PART 15 - Session
+<li><a href="#part-15---bh4-synthesis" id="toc-part-15---bh4-synthesis"><span class="toc-section-number">15</span> <strong>PART 15 - BH4
+Synthesis</strong></a></li>
+<li><a href="#part-16---reactive-chemical-species-genome-integrity-and-cellular-defense" id="toc-part-16---reactive-chemical-species-genome-integrity-and-cellular-defense"><span class="toc-section-number">16</span> <strong>PART 16 - Reactive Chemical
+Species, Genome Integrity and Cellular Defense</strong></a></li>
+<li><a href="#part-17---session-information" id="toc-part-17---session-information"><span class="toc-section-number">17</span> <strong>PART 17 - Session
 Information</strong></a></li>
 </ul>
 </div>
@@ -4480,8 +4484,362 @@ write.csv(df, &quot;csv/DEGs_BPs_HSC_Group_1_Upregulated.csv&quot;, row.names = 
 
 rm(list=ls())</code></pre>
 </div>
-<div id="part-15---session-information" class="section level1" number="15">
-<h1><span class="header-section-number">15</span> <strong>PART 15 -
+<div id="part-15---bh4-synthesis" class="section level1" number="15">
+<h1><span class="header-section-number">15</span> <strong>PART 15 - BH4
+Synthesis</strong></h1>
+<pre class="r"><code>load(&quot;rda/seurat_te_types.rda&quot;)
+load(&quot;rda/seurats_harmony.rda&quot;)
+
+keep &lt;- seurat_te@meta.data$cells
+
+obj &lt;- JoinLayers(obj, assay = &quot;RNA&quot;)
+obj &lt;- subset(obj, subset=cells %in% keep)
+
+meta &lt;- obj@meta.data
+metate &lt;- seurat_te@meta.data
+meta &lt;- meta[rownames(metate),]
+
+meta[meta$cells %in% metate$cells, &quot;Type&quot;] &lt;- metate$Type[metate$cells %in% meta$cells]
+
+obj &lt;- AddMetaData(obj, meta$Type, col.name = &quot;Type&quot;)
+
+mat &lt;- as.matrix(obj@assays$RNA$scale.data)
+
+if (&quot;DHFR&quot; %in% rownames(mat)) {
+  cat(&quot;Gene found\n&quot;)
+}
+
+targets &lt;- c(&quot;GCH1&quot;,&quot;PTS&quot;,&quot;SPR&quot;,&quot;QDPR&quot;,&quot;DHFR&quot;)
+
+meta$Condition &lt;- factor(meta$Condition, levels = c(&quot;HD&quot;,&quot;FPD&quot;))
+meta &lt;- meta[order(meta$Condition),]
+mat &lt;- mat[,meta$cells]
+
+# GCH1
+gch1 &lt;- &quot;GCH1&quot;
+
+df &lt;- data.frame(
+  expr = as.numeric(mat[gch1, ]),
+  celltype = meta[colnames(mat), &quot;Type&quot;],
+  condition = meta[colnames(mat), &quot;Condition&quot;]
+)
+
+p &lt;- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = &quot;gray92&quot;) 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = &quot;black&quot;
+  ) +
+  scale_fill_manual(values = &quot;gray92&quot;, name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = &#39;errorbar&#39;, linetype = 1, width = 0.3) + 
+  labs(title = &quot;GCH1&quot;,
+       x = &quot;&quot;,
+       y = &quot;Expression (zscore)&quot;) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = &quot;black&quot;, face = &quot;bold&quot;),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color=&quot;black&quot;), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = &quot;bold&quot;, color=&quot;black&quot;, angle = 45), 
+    legend.position = &quot;none&quot;,
+    strip.text = element_text(size = 10.5, face = &quot;bold&quot;),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = &quot;white&quot;),
+    panel.grid.minor = element_line(color = &quot;white&quot;)
+  )
+
+ggsave(&quot;plots/Boxplot_GCH1.png&quot;, p, height=7.5, width=11, dpi=300)
+
+write.csv(df, &quot;csv/Boxplot_GCH1.csv&quot;, row.names = FALSE)
+
+# PTS
+pts &lt;- &quot;PTS&quot;
+
+df &lt;- data.frame(
+  expr = as.numeric(mat[pts, ]),
+  celltype = meta[colnames(mat), &quot;Type&quot;],
+  condition = meta[colnames(mat), &quot;Condition&quot;]
+)
+
+p &lt;- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = &quot;gray92&quot;) 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = &quot;black&quot;
+  ) +
+  scale_fill_manual(values = &quot;gray92&quot;, name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = &#39;errorbar&#39;, linetype = 1, width = 0.3) + 
+  labs(title = &quot;PTS&quot;,
+       x = &quot;&quot;,
+       y = &quot;Expression (zscore)&quot;) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = &quot;black&quot;, face = &quot;bold&quot;),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color=&quot;black&quot;), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = &quot;bold&quot;, color=&quot;black&quot;, angle = 45), 
+    legend.position = &quot;none&quot;,
+    strip.text = element_text(size = 10.5, face = &quot;bold&quot;),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = &quot;white&quot;),
+    panel.grid.minor = element_line(color = &quot;white&quot;)
+  )
+
+ggsave(&quot;plots/Boxplot_PTS.png&quot;, p, height=7.5, width=11, dpi=300)
+
+write.csv(df, &quot;csv/Boxplot_PTS.csv&quot;, row.names = FALSE)
+
+# SPR
+spr &lt;- &quot;SPR&quot;
+
+df &lt;- data.frame(
+  expr = as.numeric(mat[spr, ]),
+  celltype = meta[colnames(mat), &quot;Type&quot;],
+  condition = meta[colnames(mat), &quot;Condition&quot;]
+)
+
+p &lt;- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = &quot;gray92&quot;) 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = &quot;black&quot;
+  ) +
+  scale_fill_manual(values = &quot;gray92&quot;, name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = &#39;errorbar&#39;, linetype = 1, width = 0.3) + 
+  labs(title = &quot;SPR&quot;,
+       x = &quot;&quot;,
+       y = &quot;Expression (zscore)&quot;) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = &quot;black&quot;, face = &quot;bold&quot;),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color=&quot;black&quot;), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = &quot;bold&quot;, color=&quot;black&quot;, angle = 45), 
+    legend.position = &quot;none&quot;,
+    strip.text = element_text(size = 10.5, face = &quot;bold&quot;),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = &quot;white&quot;),
+    panel.grid.minor = element_line(color = &quot;white&quot;)
+  )
+
+ggsave(&quot;plots/Boxplot_SPR.png&quot;, p, height=7.5, width=11, dpi=300)
+
+write.csv(df, &quot;csv/Boxplot_SPR.csv&quot;, row.names = FALSE)
+
+# QDPR
+qdpr &lt;- &quot;QDPR&quot;
+
+df &lt;- data.frame(
+  expr = as.numeric(mat[qdpr, ]),
+  celltype = meta[colnames(mat), &quot;Type&quot;],
+  condition = meta[colnames(mat), &quot;Condition&quot;]
+)
+
+p &lt;- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = &quot;gray92&quot;) 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = &quot;black&quot;
+  ) +
+  scale_fill_manual(values = &quot;gray92&quot;, name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = &#39;errorbar&#39;, linetype = 1, width = 0.3) + 
+  labs(title = &quot;QDPR&quot;,
+       x = &quot;&quot;,
+       y = &quot;Expression (zscore)&quot;) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = &quot;black&quot;, face = &quot;bold&quot;),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color=&quot;black&quot;), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = &quot;bold&quot;, color=&quot;black&quot;, angle = 45), 
+    legend.position = &quot;none&quot;,
+    strip.text = element_text(size = 10.5, face = &quot;bold&quot;),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = &quot;white&quot;),
+    panel.grid.minor = element_line(color = &quot;white&quot;)
+  )
+
+ggsave(&quot;plots/Boxplot_QDPR.png&quot;, p, height=7.5, width=11, dpi=300)
+
+write.csv(df, &quot;csv/Boxplot_QDPR.csv&quot;, row.names = FALSE)
+
+# DHFR
+dhfr &lt;- &quot;DHFR&quot;
+
+df &lt;- data.frame(
+  expr = as.numeric(mat[dhfr, ]),
+  celltype = meta[colnames(mat), &quot;Type&quot;],
+  condition = meta[colnames(mat), &quot;Condition&quot;]
+)
+
+p &lt;- ggplot(
+  data = df,
+  aes(x = celltype, y = expr, fill = &quot;gray92&quot;) 
+) +
+  geom_boxplot(
+    position = position_dodge(width = 1.5),
+    outlier.shape = 17,
+    outlier.size = 0.5,
+    outlier.color = &quot;black&quot;
+  ) +
+  scale_fill_manual(values = &quot;gray92&quot;, name = NULL) +
+  facet_wrap(~ condition) +
+  stat_boxplot(aes(celltype, expr), geom = &#39;errorbar&#39;, linetype = 1, width = 0.3) + 
+  labs(title = &quot;DHFR&quot;,
+       x = &quot;&quot;,
+       y = &quot;Expression (zscore)&quot;) +
+  theme_bw() +
+  theme(
+    axis.title.y = element_text(size = 9.5, color = &quot;black&quot;, face = &quot;bold&quot;),
+    axis.title.x = element_blank(),
+    axis.text.y = element_text(size = 9.5, color=&quot;black&quot;), 
+    axis.text.x = element_text(size = 7.5, hjust = 1,face = &quot;bold&quot;, color=&quot;black&quot;, angle = 45), 
+    legend.position = &quot;none&quot;,
+    strip.text = element_text(size = 10.5, face = &quot;bold&quot;),
+    axis.ticks.x = element_blank(),
+    panel.grid.major = element_line(color = &quot;white&quot;),
+    panel.grid.minor = element_line(color = &quot;white&quot;)
+  )
+
+ggsave(&quot;plots/Boxplot_DHFR.png&quot;, p, height=7.5, width=11, dpi=300)
+
+write.csv(df, &quot;csv/Boxplot_DHFR.csv&quot;, row.names = FALSE)</code></pre>
+</div>
+<div id="part-16---reactive-chemical-species-genome-integrity-and-cellular-defense" class="section level1" number="16">
+<h1><span class="header-section-number">16</span> <strong>PART 16 -
+Reactive Chemical Species, Genome Integrity and Cellular
+Defense</strong></h1>
+<pre class="r"><code>genes_RCS &lt;- unique(c(
+  &quot;NOX1&quot;,&quot;CYBB&quot;,&quot;NOX3&quot;,&quot;NOX4&quot;,&quot;NOX5&quot;,&quot;DUOX1&quot;,&quot;DUOX2&quot;,&quot;CYBA&quot;,&quot;NCF1&quot;,&quot;NCF2&quot;,&quot;NCF4&quot;,&quot;NOXO1&quot;,
+  &quot;NOXA1&quot;,&quot;RAC1&quot;,&quot;RAC2&quot;,&quot;DUOXA1&quot;,&quot;DUOXA2&quot;,&quot;NOS1&quot;,&quot;NOS2&quot;,&quot;NOS3&quot;,&quot;GCH1&quot;,&quot;PTS&quot;,&quot;SPR&quot;,&quot;QDPR&quot;,
+  &quot;DHFR&quot;,&quot;PCBD1&quot;,&quot;ARG1&quot;,&quot;ARG2&quot;,&quot;ASS1&quot;,&quot;ASL&quot;,&quot;DDAH1&quot;,&quot;DDAH2&quot;,&quot;CYP1A1&quot;,&quot;CYP1B1&quot;,&quot;CYP2E1&quot;,&quot;CYP3A4&quot;,
+  &quot;EPHX1&quot;,&quot;NQO1&quot;,&quot;GSTA1&quot;,&quot;GSTA4&quot;,&quot;GSTP1&quot;,&quot;UGT1A1&quot;,&quot;ERO1A&quot;,&quot;ERO1B&quot;,&quot;P4HB&quot;,&quot;QSOX1&quot;,&quot;ACOX1&quot;,&quot;DAO&quot;,
+  &quot;HAO1&quot;,&quot;HAO2&quot;,&quot;CAT&quot;,&quot;NDUFS1&quot;,&quot;NDUFS2&quot;,&quot;NDUFV1&quot;,&quot;UQCRC1&quot;,&quot;UQCRC2&quot;,&quot;UQCRFS1&quot;,&quot;CYCS&quot;,&quot;COX4I1&quot;,
+  &quot;SOD2&quot;,&quot;PRDX3&quot;,&quot;TXN2&quot;,&quot;TXNRD2&quot;,&quot;MAOA&quot;,&quot;MAOB&quot;,&quot;DHODH&quot;,&quot;ACSL4&quot;,&quot;LPCAT3&quot;,&quot;ALOX5&quot;,&quot;ALOX12&quot;,&quot;ALOX15&quot;,
+  &quot;PTGS2&quot;,&quot;GPX4&quot;,&quot;SLC7A11&quot;,&quot;SLC3A2&quot;,&quot;AIFM2&quot;,&quot;FTH1&quot;,&quot;FTL&quot;,&quot;NCOA4&quot;,&quot;HMOX1&quot;,&quot;TFRC&quot;,&quot;ALDH2&quot;,&quot;ALDH1A1&quot;,
+  &quot;ALDH3A1&quot;,&quot;AKR1B1&quot;,&quot;AKR1C1&quot;,&quot;AKR1C2&quot;,&quot;AKR1C3&quot;,&quot;GSTM1&quot;,&quot;MGST1&quot;,&quot;GLO1&quot;,&quot;GLO2&quot;,&quot;SOD1&quot;,&quot;SOD3&quot;,&quot;GPX1&quot;,
+  &quot;GPX2&quot;,&quot;GPX3&quot;,&quot;PRDX1&quot;,&quot;PRDX2&quot;,&quot;PRDX4&quot;,&quot;PRDX5&quot;,&quot;PRDX6&quot;,&quot;SRXN1&quot;,&quot;TXN&quot;,&quot;TXNRD1&quot;,&quot;GCLC&quot;,&quot;GCLM&quot;,&quot;GSS&quot;,
+  &quot;GSR&quot;,&quot;G6PD&quot;,&quot;PGD&quot;,&quot;TKT&quot;,&quot;TALDO1&quot;,&quot;ME1&quot;,&quot;ME2&quot;,&quot;IDH1&quot;,&quot;IDH2&quot;,&quot;NNT&quot;,&quot;FTMT&quot;,&quot;HMOX2&quot;,&quot;SLC40A1&quot;,&quot;SLC11A2&quot;,
+  &quot;STEAP3&quot;,&quot;ACO1&quot;,&quot;IREB2&quot;,&quot;KDM1A&quot;,&quot;KDM1B&quot;,&quot;KDM4A&quot;,&quot;KDM5B&quot;,&quot;KDM6A&quot;,&quot;TET1&quot;,&quot;TET2&quot;,&quot;TET3&quot;,&quot;APOBEC3A&quot;,
+  &quot;APOBEC3B&quot;,&quot;AICDA&quot;,&quot;TOP1&quot;,&quot;TOP2A&quot;,&quot;TOP2B&quot;,&quot;SMOX&quot;,&quot;PAOX&quot;,&quot;OGG1&quot;,&quot;MUTYH&quot;,&quot;NTHL1&quot;,&quot;NEIL1&quot;,&quot;NEIL2&quot;,&quot;NEIL3&quot;,
+  &quot;UNG&quot;,&quot;APEX1&quot;,&quot;POLB&quot;,&quot;XRCC1&quot;,&quot;PARP1&quot;,&quot;PARP2&quot;,&quot;ATM&quot;,&quot;ATR&quot;,&quot;CHEK1&quot;,&quot;CHEK2&quot;,&quot;TP53&quot;,&quot;CDKN1A&quot;,&quot;CGAS&quot;,&quot;STING1&quot;,
+  &quot;TBK1&quot;,&quot;IRF1&quot;,&quot;IRF3&quot;,&quot;IRF7&quot;,&quot;IRF9&quot;,&quot;IFNAR1&quot;,&quot;IFNAR2&quot;,&quot;JAK1&quot;,&quot;TYK2&quot;,&quot;STAT1&quot;,&quot;STAT2&quot;,&quot;ISG15&quot;,&quot;IFIT1&quot;,&quot;CXCL10&quot;,
+  &quot;TLR2&quot;,&quot;TLR4&quot;,&quot;MYD88&quot;,&quot;TRAF6&quot;,&quot;NFKB1&quot;,&quot;NFKBIA&quot;,&quot;RELA&quot;,&quot;TNF&quot;,&quot;IL1B&quot;,&quot;IL6&quot;,&quot;RNASEH1&quot;,&quot;RNASEH2A&quot;,&quot;RNASEH2B&quot;,
+  &quot;RNASEH2C&quot;,&quot;SETX&quot;,&quot;RPA1&quot;,&quot;RPA2&quot;,&quot;RB1&quot;,&quot;E2F1&quot;,&quot;E2F2&quot;,&quot;CCNE1&quot;,&quot;MCM2&quot;,&quot;MCM3&quot;,&quot;MCM4&quot;,&quot;MCM5&quot;,&quot;MCM6&quot;,&quot;MCM7&quot;,&quot;PCNA&quot;,
+  &quot;NFE2L2&quot;,&quot;KEAP1&quot;,&quot;MRC1&quot;,&quot;IL10&quot;,&quot;TGFB1&quot;,&quot;MERTK&quot;,&quot;AXL&quot;,&quot;GAS6&quot;,&quot;CD163&quot;,&quot;MARCO&quot;,&quot;PRF1&quot;,&quot;GZMB&quot;,&quot;GZMA&quot;,&quot;GNLY&quot;,&quot;NKG7&quot;,
+  &quot;IFNG&quot;,&quot;FASLG&quot;,&quot;TNFSF10&quot;,&quot;CTSW&quot;))
+
+genes_DNArepair &lt;- unique(c(
+  &quot;OGG1&quot;,&quot;MUTYH&quot;,&quot;NTHL1&quot;,&quot;NEIL1&quot;,&quot;NEIL2&quot;,&quot;NEIL3&quot;,&quot;UNG&quot;,&quot;SMUG1&quot;,&quot;TDG&quot;,&quot;MBD4&quot;,&quot;APEX1&quot;,&quot;POLB&quot;,&quot;XRCC1&quot;,&quot;LIG3&quot;,
+  &quot;PARP1&quot;,&quot;PARP2&quot;,&quot;PARG&quot;,&quot;APTX&quot;,&quot;TDP1&quot;,&quot;BRCA1&quot;,&quot;BRCA2&quot;,&quot;PALB2&quot;,&quot;RAD51&quot;,&quot;RAD52&quot;,&quot;RAD54L&quot;,&quot;BARD1&quot;,&quot;FANCD2&quot;,
+  &quot;FANCI&quot;,&quot;BRIP1&quot;,&quot;XRCC5&quot;,&quot;XRCC6&quot;,&quot;PRKDC&quot;,&quot;LIG4&quot;,&quot;XRCC4&quot;,&quot;NHEJ1&quot;,&quot;TP53BP1&quot;,&quot;DCLRE1C&quot;,&quot;MSH2&quot;,&quot;MSH3&quot;,&quot;MSH6&quot;,
+  &quot;MLH1&quot;,&quot;PMS2&quot;,&quot;PMS1&quot;,&quot;EXO1&quot;,&quot;XPA&quot;,&quot;XPC&quot;,&quot;ERCC1&quot;,&quot;ERCC2&quot;,&quot;ERCC3&quot;,&quot;ERCC4&quot;,&quot;ERCC5&quot;,&quot;DDB1&quot;,&quot;DDB2&quot;,&quot;FANCA&quot;,
+  &quot;FANCB&quot;,&quot;FANCC&quot;,&quot;FANCE&quot;,&quot;FANCF&quot;,&quot;FANCG&quot;,&quot;FANCL&quot;,&quot;ATM&quot;,&quot;ATR&quot;,&quot;CHEK1&quot;,&quot;CHEK2&quot;,&quot;TP53&quot;,&quot;CDKN1A&quot;,&quot;MDM2&quot;,&quot;H2AFX&quot;,
+  &quot;RPA1&quot;,&quot;RPA2&quot;,&quot;RPA3&quot;,&quot;CLSPN&quot;,&quot;TOPBP1&quot;,&quot;CDC45&quot;,&quot;MCM2&quot;,&quot;MCM7&quot;,&quot;APOBEC3A&quot;,&quot;APOBEC3B&quot;,&quot;AICDA&quot;,&quot;REV1&quot;,&quot;POLH&quot;,
+  &quot;TERT&quot;,&quot;TERF1&quot;,&quot;TERF2&quot;,&quot;POT1&quot;,&quot;TINF2&quot;,&quot;ACD&quot;,&quot;RTEL1&quot;,&quot;POLG&quot;,&quot;TFAM&quot;,&quot;TWNK&quot;,&quot;SSBP1&quot;,&quot;MGME1&quot;))
+
+Idents(obj) &lt;- obj@meta.data$Condition
+
+# DEGs per Cell Type
+types &lt;- unique(obj@meta.data$Type)
+
+for (type in types) {
+  
+  cat(&quot;Processing:&quot;, type, &quot;\n&quot;)
+  
+  # subset object by cell type
+  sub_obj &lt;- subset(obj, subset = Type == type)
+  
+  # set identity to condition (HD vs FPD)
+  Idents(sub_obj) &lt;- sub_obj@meta.data$Condition
+  
+  # skip if not both groups present
+  if (!all(c(&quot;HD&quot;,&quot;FPD&quot;) %in% unique(Idents(sub_obj)))) {
+    cat(&quot;Skipping (missing condition):&quot;, type, &quot;\n&quot;)
+    next
+  }
+  
+  # run DEG
+  df &lt;- FindMarkers(sub_obj, ident.1 = &quot;HD&quot;, ident.2 = &quot;FPD&quot;,
+                    assay = &quot;RNA&quot;, test.use = &quot;t&quot;)
+  
+  if (nrow(df) == 0) next
+  
+  df &lt;- na.omit(df)
+  
+  # clean + rename
+  colnames(df) &lt;- c(&quot;pval&quot;,&quot;log2FC&quot;,&quot;pct_HD&quot;,&quot;pct_FPD&quot;,&quot;pval.adj&quot;)
+  df$Gene &lt;- rownames(df)
+  
+  # classification
+  df$Status &lt;- &quot;ns&quot;
+  df[df$pval.adj &lt;= 0.05 &amp; df$log2FC &gt; 0, &quot;Status&quot;] &lt;- &quot;Up in HD&quot;
+  df[df$pval.adj &lt;= 0.05 &amp; df$log2FC &lt; 0, &quot;Status&quot;] &lt;- &quot;Up in FPD&quot;
+  
+  df$Status &lt;- factor(df$Status, levels = c(&quot;Up in HD&quot;,&quot;Up in FPD&quot;,&quot;ns&quot;))
+  
+  # select top genes for labeling
+  label &lt;- df[df$Status != &quot;ns&quot;, ]
+  
+  top_up &lt;- label %&gt;% 
+    dplyr::filter(Status == &quot;Up in HD&quot;) %&gt;% 
+    arrange(pval.adj) %&gt;% 
+    slice_head(n = 20)
+  
+  top_down &lt;- label %&gt;% 
+    dplyr::filter(Status == &quot;Up in FPD&quot;) %&gt;% 
+    arrange(pval.adj) %&gt;% 
+    slice_head(n = 20)
+  
+  lab_genes &lt;- rbind(top_up, top_down)
+  
+  # volcano plot
+  p &lt;- ggplot(df, aes(x = log2FC, y = -log10(pval.adj), color = Status)) +
+    geom_point(size = 2) +
+    scale_color_manual(values = c(&quot;darkred&quot;,&quot;blue&quot;,&quot;gray70&quot;)) +
+    geom_hline(yintercept = -log10(0.05), linetype = &quot;dashed&quot;) +
+    geom_vline(xintercept = 0, linetype = &quot;dashed&quot;) +
+    theme_bw() +
+    labs(title = paste0(&quot;Volcano: &quot;, type),
+         x = &quot;log2(Fold Change)&quot;,
+         y = &quot;-log10(FDR)&quot;) +
+    geom_label_repel(data = lab_genes,
+                     aes(label = Gene),
+                     size = 3,
+                     max.overlaps = 100,
+                     show.legend = FALSE)
+  
+  # save outputs
+  ggsave(paste0(&quot;plots/Volcano_&quot;, gsub(&quot; &quot;, &quot;_&quot;, type), &quot;.png&quot;),
+         p, height = 6, width = 9, dpi = 300)
+  
+  write.csv(df,
+            paste0(&quot;csv/DEG_&quot;, gsub(&quot; &quot;, &quot;_&quot;, type), &quot;.csv&quot;),
+            row.names = FALSE)
+}</code></pre>
+</div>
+<div id="part-17---session-information" class="section level1" number="17">
+<h1><span class="header-section-number">17</span> <strong>PART 17 -
 Session Information</strong></h1>
 <pre class="r"><code>sessionInfo()</code></pre>
 <pre><code>## R version 4.4.1 (2024-06-14 ucrt)
